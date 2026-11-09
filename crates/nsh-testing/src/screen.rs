@@ -160,6 +160,9 @@ pub struct Screen {
     /// The open menu is a view's `context_menu`, which no `Menu.popup`
     /// waits on.
     menu_of_view: bool,
+    /// The application menu the app set (`Menu.setApplicationMenu`), whose
+    /// shortcuts the keyboard chooses.
+    app_menu: Option<Arc<[nsh_core::desktop::MenuItem]>>,
     /// The window's size, when the driver knows it: what lies outside it
     /// (and no scroll view brings in) is not on screen.
     viewport: Option<Size<Points>>,
@@ -650,6 +653,9 @@ impl Screen {
                 nsh_core::desktop::DesktopCommand::PopupMenu { items, .. } => {
                     self.menu = Some(items.clone());
                     self.menu_of_view = false;
+                }
+                nsh_core::desktop::DesktopCommand::SetMenu(items) => {
+                    self.app_menu = items.clone();
                 }
                 nsh_core::desktop::DesktopCommand::OpenWindow(open)
                     if !self.windows.iter().any(|(root, _)| *root == id) =>
@@ -2068,6 +2074,11 @@ impl Screen {
     /// The context menu the app shows (`Menu.popup`), if one is open.
     pub(crate) fn menu(&self) -> Option<&[nsh_core::desktop::MenuItem]> {
         self.menu.as_deref()
+    }
+
+    /// The application menu the app set, if it set one.
+    pub(crate) fn app_menu(&self) -> Option<&[nsh_core::desktop::MenuItem]> {
+        self.app_menu.as_deref()
     }
 
     /// The open context menu was chosen from or closed.

@@ -22,9 +22,7 @@ use block2::RcBlock;
 use nsh_core::{
     Color, EdgeInsets, EventKind, EventPayload, HeaderItem, HeaderItemContent, HeaderSystemItem,
     ModalAnimation, ModalConfig, ModalPresentation, NavShader, NodeId, PayloadValue, Points,
-    ScreenAnimation, ScreenConfig, Size,
-    desktop::{MenuAction, MenuItem},
-    element::header::same_right_buttons,
+    ScreenAnimation, ScreenConfig, Size, desktop::MenuItem, element::header::same_right_buttons,
 };
 use nsh_engine::EngineControl;
 use objc2::{
@@ -37,18 +35,17 @@ use objc2_core_foundation::{CGFloat, CGSize};
 use objc2_foundation::{NSArray, NSObject, NSObjectProtocol, NSString};
 use objc2_quartz_core::{CAMediaTiming, CATransition};
 use objc2_ui_kit::{
-    NSForegroundColorAttributeName, UIAction, UIAdaptivePresentationControllerDelegate,
-    UIBarButtonItem, UIBarButtonItemStyle, UIBarButtonSystemItem, UIBehavioralStyle, UIColor,
-    UIEdgeInsets, UIGestureRecognizer, UIGestureRecognizerDelegate, UIImage,
-    UIInterfaceOrientationMask, UIMenu, UIMenuElement, UIMenuElementAttributes, UIMenuElementState,
-    UIMenuOptions, UIModalPresentationStyle, UIModalTransitionStyle, UINavigationBar,
-    UINavigationBarAppearance, UINavigationController, UINavigationControllerDelegate,
-    UINavigationItem, UINavigationItemLargeTitleDisplayMode, UIPresentationController, UIResponder,
-    UIScrollView, UIView, UIViewAutoresizing, UIViewController,
-    UIViewControllerTransitionCoordinator, UIViewControllerTransitionCoordinatorContext,
+    NSForegroundColorAttributeName, UIAdaptivePresentationControllerDelegate, UIBarButtonItem,
+    UIBarButtonItemStyle, UIBarButtonSystemItem, UIBehavioralStyle, UIColor, UIEdgeInsets,
+    UIGestureRecognizer, UIGestureRecognizerDelegate, UIImage, UIInterfaceOrientationMask, UIMenu,
+    UIModalPresentationStyle, UIModalTransitionStyle, UINavigationBar, UINavigationBarAppearance,
+    UINavigationController, UINavigationControllerDelegate, UINavigationItem,
+    UINavigationItemLargeTitleDisplayMode, UIPresentationController, UIResponder, UIScrollView,
+    UIView, UIViewAutoresizing, UIViewController, UIViewControllerTransitionCoordinator,
+    UIViewControllerTransitionCoordinatorContext,
 };
 
-use crate::{mount::SharedMounter, native_view::NshView};
+use crate::{menu::system_image, mount::SharedMounter, native_view::NshView};
 
 fn insets_payload(i: EdgeInsets) -> EventPayload {
     EventPayload::Map(vec![
@@ -869,11 +866,6 @@ fn make_bar_button(
     }
 }
 
-/// An SF Symbol image, or `None` when the name is unknown.
-fn system_image(name: &str) -> Option<Retained<UIImage>> {
-    UIImage::systemImageNamed(&NSString::from_str(name))
-}
-
 /// Dispatches a menu / press id as the root's `Menu` event.
 fn menu_select(mounter: &SharedMounter, mtm: MainThreadMarker, id: u32) {
     if id == 0 {
@@ -886,156 +878,16 @@ fn menu_select(mounter: &SharedMounter, mtm: MainThreadMarker, id: u32) {
     }
 }
 
-/// A `UIAction` for a [`MenuAction`].
-fn make_menu_action(
-    mtm: MainThreadMarker,
-    action: &MenuAction,
-    mounter: SharedMounter,
-) -> Retained<UIAction> {
-    let title = NSString::from_str(&action.label);
-    // Prefer an SF Symbol; `icon` (an image source) is for desktop menus.
-    let image = action.symbol.as_deref().and_then(system_image);
-    let id = action.id;
-    let handler = RcBlock::new(move |_: NonNull<UIAction>| {
-        menu_select(&mounter, mtm, id);
-    });
-    // No UIKit identifier: the API lets an app reuse an action id in two
-    // menus, and UIKit may drop or merge elements that share one. The
-    // handler already carries the id.
-    // SAFETY: UIKit copies the handler; the block stays while the action does.
-    let item = unsafe {
-        UIAction::actionWithTitle_image_identifier_handler(
-            &title,
-            image.as_deref(),
-            None,
-            (&*handler as *const block2::DynBlock<_>).cast_mut(),
-            mtm,
-        )
-    };
-    let mut attrs = UIMenuElementAttributes::empty();
-    if !action.enabled {
-        attrs |= UIMenuElementAttributes::Disabled;
-    }
-    if action.destructive {
-        attrs |= UIMenuElementAttributes::Destructive;
-    }
-    item.setAttributes(attrs);
-    item.setState(if action.checked == Some(true) {
-        UIMenuElementState::On
-    } else {
-        UIMenuElementState::Off
-    });
-    item
-}
-
-/// Builds a `UIMenu` tree from [`MenuItem`]s.
+/// A `UIMenu` of [`MenuItem`]s whose actions report their ids through the
+/// mounter ([`crate::menu::make_menu`]).
 fn make_menu(
     mtm: MainThreadMarker,
     items: &[MenuItem],
     mounter: &SharedMounter,
 ) -> Retained<UIMenu> {
-    let children = menu_children(mtm, items, mounter, true);
-    UIMenu::menuWithTitle_children(&NSString::from_str(""), &children, mtm)
-}
-
-/// One menu element from a non-separator [`MenuItem`].
-fn menu_element(
-    mtm: MainThreadMarker,
-    entry: &MenuItem,
-    mounter: &SharedMounter,
-    enabled: bool,
-) -> Option<Retained<UIMenuElement>> {
-    match entry {
-        MenuItem::Separator => None,
-        MenuItem::Action(action) => {
-            let mut action = action.clone();
-            if !enabled {
-                action.enabled = false;
-            }
-            Some(Retained::into_super(make_menu_action(
-                mtm,
-                &action,
-                mounter.clone(),
-            )))
-        }
-        MenuItem::Submenu {
-            label,
-            enabled: submenu_enabled,
-            items,
-            icon: _,
-            symbol,
-            inline,
-        } => {
-            let child_enabled = enabled && *submenu_enabled;
-            let nested = menu_children(mtm, items, mounter, child_enabled);
-            let image = symbol.as_deref().and_then(system_image);
-            let options = if *inline {
-                UIMenuOptions::DisplayInline
-            } else {
-                UIMenuOptions::empty()
-            };
-            let submenu = UIMenu::menuWithTitle_image_identifier_options_children(
-                &NSString::from_str(label),
-                image.as_deref(),
-                None,
-                options,
-                &nested,
-                mtm,
-            );
-            Some(Retained::into_super(submenu))
-        }
-    }
-}
-
-/// Menu children for a list of [`MenuItem`]s. Separators split the list into
-/// consecutive inline `UIMenu` groups (UIKit draws separators between those);
-/// with no separators the elements stay flat. A disabled submenu has no
-/// enabled state of its own, so its children are disabled instead.
-fn menu_children(
-    mtm: MainThreadMarker,
-    entries: &[MenuItem],
-    mounter: &SharedMounter,
-    enabled: bool,
-) -> Retained<NSArray<UIMenuElement>> {
-    let has_separator = entries.iter().any(|e| matches!(e, MenuItem::Separator));
-    if !has_separator {
-        let children: Vec<_> = entries
-            .iter()
-            .filter_map(|entry| menu_element(mtm, entry, mounter, enabled))
-            .collect();
-        return NSArray::from_retained_slice(&children);
-    }
-    let mut children: Vec<Retained<UIMenuElement>> = Vec::new();
-    let mut group: Vec<Retained<UIMenuElement>> = Vec::new();
-    let flush = |group: &mut Vec<Retained<UIMenuElement>>,
-                 children: &mut Vec<Retained<UIMenuElement>>| {
-        if group.is_empty() {
-            return;
-        }
-        let elems = NSArray::from_retained_slice(group);
-        let section = UIMenu::menuWithTitle_image_identifier_options_children(
-            &NSString::from_str(""),
-            None,
-            None,
-            UIMenuOptions::DisplayInline,
-            &elems,
-            mtm,
-        );
-        children.push(Retained::into_super(section));
-        group.clear();
-    };
-    for entry in entries {
-        match entry {
-            MenuItem::Separator => flush(&mut group, &mut children),
-            other => {
-                if let Some(el) = menu_element(mtm, other, mounter, enabled) {
-                    group.push(el);
-                }
-            }
-        }
-    }
-    flush(&mut group, &mut children);
-    NSArray::from_retained_slice(&children)
+    let mounter = mounter.clone();
+    let select: crate::menu::Select = Rc::new(move |id| menu_select(&mounter, mtm, id));
+    crate::menu::make_menu(mtm, items, &select)
 }
 
 /// A bar button from its content only (no menu, target or action yet).

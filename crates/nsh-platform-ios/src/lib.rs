@@ -33,6 +33,7 @@ mod image;
 mod input;
 mod interaction;
 mod keymap;
+mod menu;
 mod mount;
 mod native_view;
 mod navigation;

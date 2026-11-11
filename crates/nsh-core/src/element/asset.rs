@@ -80,8 +80,9 @@ impl AssetFile {
 }
 
 /// What an image shows ([`super::image`], [`super::Image::placeholder`]):
-/// a URL, a file path or `asset:/` URI (strings), or an [`ImageAsset`],
-/// whose natural size lays it out before it loads.
+/// a URL, a file path or `asset:/` URI (strings), an [`ImageAsset`],
+/// whose natural size lays it out before it loads, or an SF Symbol
+/// ([`crate::image::Symbol`], [`Self::symbol`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImageSrc {
     pub(crate) uri: SharedString,
@@ -121,7 +122,25 @@ impl From<&ImageAsset> for ImageSrc {
     }
 }
 
+impl From<crate::image::Symbol> for ImageSrc {
+    fn from(symbol: crate::image::Symbol) -> Self {
+        symbol.to_string().into()
+    }
+}
+
 impl ImageSrc {
+    /// The SF Symbol `name` (`checkmark.circle.fill`), at the regular
+    /// weight: the platform draws it at the size the view shows it, in the
+    /// view's `tintColor` ([`super::Image::tint_color`]; black without
+    /// one), contained in its box unless `objectFit` says otherwise. iOS
+    /// and macOS (11 and later) draw symbols; elsewhere, and for a name the
+    /// system does not know, the image fails to load (`onError`) and shows
+    /// nothing. Give the view a size: a symbol has none of its own before
+    /// it is drawn. [`crate::image::Symbol`] sets a weight.
+    pub fn symbol(name: impl Into<String>) -> Self {
+        crate::image::Symbol::new(name).into()
+    }
+
     /// Whether its URL is empty: no image, as an `<Image>` whose `src`
     /// is `""` shows none.
     pub fn is_empty(&self) -> bool {
@@ -165,5 +184,6 @@ crate::static_reactive!(
     &ImageAsset,
     super::SharedString,
     String,
-    &'static str
+    &'static str,
+    crate::image::Symbol
 );

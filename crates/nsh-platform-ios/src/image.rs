@@ -13,12 +13,17 @@
 //! the requested pixel size instead, then blurred, filtered, tinted and
 //! cached as bitmaps; their size is their intrinsic size in points.
 //! Canvases draw bitmaps only.
+//!
+//! SF Symbols (`symbol:<name>`) are drawn by UIKit when a view asks
+//! ([`symbol`]), never fetched, and cached as decoded images.
+
+mod symbol;
 
 use dispatch2::{DispatchQueue, DispatchQueueGlobalPriority, GlobalQueueIdentifier};
 use nsh_core::{
     ImageData, NodeId,
     geometry::{Points, Size},
-    image::{CacheHeaders, DiskCache, Fetched, Lookup},
+    image::{CacheHeaders, DiskCache, Fetched, Lookup, Symbol},
 };
 use objc2::{
     AnyThread, DefinedClass, Message, define_class, msg_send, rc::Retained, runtime::ProtocolObject,
@@ -294,6 +299,9 @@ impl ImageLoader {
             blur: look.blur as f64 * scale,
             matrix: look.matrix,
         };
+        if let Some(symbol) = Symbol::parse(uri) {
+            return self.symbol(view, key, uri, &symbol, decoding);
+        }
         self.inflight.insert(
             key.clone(),
             Inflight {
@@ -310,9 +318,68 @@ impl ImageLoader {
     }
 
     /// `Image.getSize` (and `Image.prefetch`): the pixel size of `uri`,
-    /// keeping its bytes for the views that show it next.
+    /// keeping its bytes for the views that show it next. An SF Symbol's:
+    /// its size in points, as `onLoad` reports it.
     pub(crate) fn info(&mut self, id: u32, uri: &str) {
-        self.fetch(uri, Want::Info(id));
+        match Symbol::parse(uri) {
+            Some(symbol) => {
+                let result = symbol::draw(&symbol, 0, 1.0).map(|drawn| drawn.natural);
+                on_main(&self.notify, LoadEvent::Info { id, result });
+            }
+            None => self.fetch(uri, Want::Info(id)),
+        }
+    }
+
+    /// Draws the SF Symbol `symbol` (`uri`) for `view` now, as `decoding`
+    /// asks, and caches it under `key` as a decoded image. A symbol the
+    /// system does not have fails as a load does (`onError`), once the
+    /// caller has recorded the pending key.
+    fn symbol(
+        &mut self,
+        view: NodeId,
+        key: String,
+        uri: &str,
+        symbol: &Symbol,
+        d: Decoding,
+    ) -> Request {
+        self.inflight.insert(
+            key.clone(),
+            Inflight {
+                uri: uri.to_owned(),
+                decoding: d,
+                waiters: vec![view],
+            },
+        );
+        let drawn = match symbol::draw(symbol, d.max_pixels, d.scale) {
+            Ok(drawn) => drawn,
+            Err(message) => {
+                on_main(
+                    &self.notify,
+                    LoadEvent::Decoded {
+                        key,
+                        result: Err(message),
+                    },
+                );
+                return Request::Pending;
+            }
+        };
+        let image = match d.blur > 0.0 || d.matrix.is_some() {
+            true => crate::blur::filtered(&drawn.image, d.blur, d.matrix).unwrap_or(drawn.image),
+            false => drawn.image,
+        };
+        let decoded = DecodedImage {
+            image: UIImage::imageWithCGImage_scale_orientation(
+                &image,
+                d.scale as CGFloat,
+                UIImageOrientation::Up,
+            ),
+            width: drawn.natural.0,
+            height: drawn.natural.1,
+            vector: false,
+        };
+        // Into the cache, as a decode that finished.
+        self.finish(&key, &Ok(decoded.clone()));
+        Request::Ready(decoded)
     }
 
     /// The views waiting for `uri`.

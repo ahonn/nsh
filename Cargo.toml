@@ -379,6 +379,8 @@ objc2-ui-kit = { version = "0.3.2", default-features = false, features = [
   "UIViewPropertyAnimator",
   "UIVisualEffect",
   "UIVisualEffectView",
+  "UIImageConfiguration",
+  "UIImageSymbolConfiguration",
 ] }
 # The macOS performance monitor's per-process GPU time (the IO registry).
 objc2-io-kit = { version = "0.3.2", default-features = false, features = ["std", "libc"] }

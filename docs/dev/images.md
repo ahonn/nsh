@@ -243,3 +243,21 @@
   patterns count each time they are drawn) is refused with an `svg::Error`. A panic in usvg or resvg is an
   `svg::Error` too (`catch_unwind`): the decoders run in GCD blocks and JNI functions, where an unwinding panic aborts.
   Android's decode threads also catch `OutOfMemoryError`, so a load that runs out of memory fails instead of hanging.
+- **SF Symbols** (`nsh_core::image::Symbol`, `image/symbol.rs`): `symbol:<name>` (`symbol:checkmark.circle.fill`,
+  with an optional `?weight=<100..900>`, the nearest of SF Symbols' nine weights) is an image source the platform
+  draws, never loads: Rust writes `image(ImageSrc::symbol("star.fill"))` or
+  `image(Symbol::new("star").weight(FontWeight::SEMIBOLD))`, TSX `<Image src="symbol:star.fill" />`. It is not a URL,
+  so the access check lets it through (`Access::allows_media`) and no loader, download or cache on disk sees it. The
+  core mounts it as any image, contained in its box unless `objectFit` says otherwise (an icon shows whole), so
+  `tintColor`, `objectPosition`, filters, `onLoad` / `onError` and accessibility (decorative unless labeled) work as
+  for other images; it has no size before it is drawn, so the app sizes the view. iOS (`nsh-platform-ios`
+  `image/symbol.rs`) draws it with UIKit on the main thread when the view asks (`ImageLoader::request`):
+  `systemImageNamed:withConfiguration:` at the point size that makes its longer side the view's longer side in pixels
+  (sharp when contained in a square box), measured at 100 points first; the drawing is filled black through its
+  alpha, so the tint mask colors it as it does a template image, and the result is cached in the loader's `NSCache`
+  as a decoded image. macOS (`nsh-platform-macos` `image/symbol.rs`, macOS 11 and later) draws it with AppKit at the
+  vector size bucket an SVG of that size would get (`Want::longest`), uncached; its picture is a vector one, so a
+  menu item's `icon` given a symbol is a template. Both report the symbol's size at the system's default point size
+  in whole points (`onLoad`, `Image.getSize`), as an SVG's. A name the system does not know fails as a load does
+  (`onError`, a warning) and shows nothing; the other platforms have no SF Symbols and fail the same way (the core
+  loader resolves no `symbol:` location; Android and the web fail to load the URI).

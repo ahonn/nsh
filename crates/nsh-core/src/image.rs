@@ -18,6 +18,9 @@
 //! memory) and keep what they decode in [`Images`] at display size, in one
 //! [`budget`] per process with leases on what views show ([`MemoryCache`]):
 //! `docs/dev/images.md`.
+//!
+//! An SF Symbol is a source too ([`Symbol`], `symbol:<name>`): the
+//! platforms draw it, nothing loads it.
 
 use std::{
     fmt,
@@ -39,6 +42,8 @@ mod memory;
 #[cfg(not(target_arch = "wasm32"))]
 pub use decoded::{Decoded, Decoder, Done, Frames, Images, Key, Natural, Request, Target, Want};
 pub use memory::{Budget, Lease, MemoryCache, bucket, budget, default_budget, wanted};
+mod symbol;
+pub use symbol::Symbol;
 
 type Bytes = dyn AsRef<[u8]> + Send + Sync;
 

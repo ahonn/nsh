@@ -32,6 +32,11 @@
 //! layer's `contents`. The `placeholder` shows until the image arrives (and
 //! stays on error); an image that had to load fades in over `fadeDuration`
 //! (default 0, as iOS).
+//!
+//! SF Symbols (`symbol:<name>`) are drawn by AppKit when a view asks
+//! ([`symbol`]), never read, and go through the same look and tint.
+
+mod symbol;
 
 use std::{
     any::Any,
@@ -54,7 +59,7 @@ use nsh_core::{
     geometry::{DevicePixels, Size, size},
     image::{
         CacheHeaders, DiskCache, Fetched, Frames, Images, Key, Lease, MemoryCache, Natural,
-        Request, Target, Want,
+        Request, Symbol, Target, Want,
         loader::{Context, Get, Priority, Ticket, Transport, loader},
     },
 };
@@ -605,6 +610,10 @@ fn fetch(
     progress: Option<Progress>,
     done: Done,
 ) -> Option<Load> {
+    if let Some(symbol) = Symbol::parse(&source.uri) {
+        done(draw_symbol(&symbol, want, look));
+        return None;
+    }
     let context = context(surface, &source.uri);
     let Some(location) = context.locate(source) else {
         done(Err(format!("unsupported image source `{}`", source.uri)));
@@ -676,6 +685,27 @@ fn fetch(
         ticket: Some(ticket),
         ids: (id, listener),
     })
+}
+
+/// The SF Symbol `symbol` drawn for `want` with `look` (main thread): a
+/// vector picture, sized in points as an SVG is, kept by nothing but the
+/// view that shows it (drawing one again costs less than a lookup would
+/// save).
+fn draw_symbol(symbol: &Symbol, want: Want, look: Look) -> Result<(Picture, Lease), String> {
+    let (image, natural) = symbol::draw(symbol, want.scale, |points| {
+        want.longest(Natural::Vector(points), 1.0, None)
+    })?;
+    let picture = Picture {
+        frames: Arc::new([image]),
+        key_times: Arc::new([0.0, 1.0]),
+        duration: 0.0,
+        natural: Natural::Vector(natural),
+    };
+    let picture = match look.plain() {
+        true => picture,
+        false => look.apply(&picture),
+    };
+    Ok((picture, Lease::none()))
 }
 
 /// Decodes `bytes` at `target` with ImageIO (a thumbnail when it shrinks:
@@ -1025,6 +1055,11 @@ pub(crate) fn command(surface: &Rc<Surface>, _id: NodeId, command: &Command) {
             EventPayload::Map(fields),
         );
     };
+    if let Some(symbol) = Symbol::parse(uri) {
+        let (_, report) = on_main(report);
+        report(symbol::draw(&symbol, 1.0, |_| 1).map(|(_, natural)| Natural::Vector(natural)));
+        return;
+    }
     let context = context(surface, uri);
     let Some(location) = context.resolve(uri) else {
         report(Err(format!("unsupported image source `{uri}`")));

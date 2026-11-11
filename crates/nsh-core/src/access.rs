@@ -2347,6 +2347,8 @@ mod tests {
         assert!(access.allows_media("/home/a/logo.png"));
         assert!(access.allows_media("file:///home/a/logo.png"));
         assert!(access.allows_media("data:image/png;base64,iVBORw0KGgo="));
+        // An SF Symbol is drawn by the platform, never loaded.
+        assert!(access.allows_media("symbol:checkmark.circle.fill"));
         assert!(!access.allows_webview("https://example.com/"));
         assert!(!access.allows_status_bar());
         assert!(!access.allows_clipboard());

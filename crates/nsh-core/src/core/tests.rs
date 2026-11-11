@@ -33458,3 +33458,60 @@ fn a_backdrop_follows_the_order_views_draw_in() {
         batch.items
     );
 }
+
+#[test]
+fn symbol_images_are_contained_by_default_and_pass_unchanged() {
+    let mut c = core();
+    // Even with nothing granted: a symbol is drawn, never loaded.
+    c.set_access(Arc::new(crate::access::Access {
+        declared: crate::access::Capabilities::from_json(&serde_json::json!({})).unwrap(),
+        granted: None,
+    }));
+    let source = ImageSource {
+        uri: crate::image::Symbol::new("star.fill")
+            .weight(crate::element::FontWeight::BOLD)
+            .to_string()
+            .into(),
+        ..Default::default()
+    };
+    apply(&mut c, image_ops(2, source, None));
+    let image = |batch: &MountBatch| {
+        batch.items.iter().rev().find_map(|i| match i {
+            MountItem::Image {
+                id: 2,
+                source,
+                resize_mode,
+                ..
+            } => Some((source.as_ref().map(|s| s.uri.to_string()), *resize_mode)),
+            _ => None,
+        })
+    };
+    assert_eq!(
+        image(&c.commit().unwrap()),
+        Some((
+            Some("symbol:star.fill?weight=700".to_owned()),
+            ResizeMode::Contain
+        ))
+    );
+    // `objectFit` wins, as for any image.
+    apply(&mut c, vec![class_op(2, "object-cover")]);
+    assert_eq!(
+        image(&c.commit().unwrap()).map(|i| i.1),
+        Some(ResizeMode::Cover)
+    );
+    // Another source covers its box by default again.
+    apply(
+        &mut c,
+        vec![
+            class_op(2, ""),
+            Op::SetProp {
+                id: 2,
+                prop: Prop::Source(Some(asset("asset:/a.png", &[]))),
+            },
+        ],
+    );
+    assert_eq!(
+        image(&c.commit().unwrap()).map(|i| i.1),
+        Some(ResizeMode::Cover)
+    );
+}

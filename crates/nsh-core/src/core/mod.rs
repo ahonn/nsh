@@ -6321,8 +6321,11 @@ impl<M: TextEngine> Core<M> {
                 && let Some(image) = &node.image
             {
                 // The style's `objectFit`; an image covers its box by
-                // default.
-                let resize_mode = node.object_fit.unwrap_or_default();
+                // default, an SF Symbol (an icon) is contained.
+                let resize_mode = node.object_fit.unwrap_or_else(|| match &image.source {
+                    Some(s) if crate::image::Symbol::is_symbol(&s.uri) => ResizeMode::Contain,
+                    _ => ResizeMode::default(),
+                });
                 // Bundled assets with variants: the one for the screen.
                 let ratio = self.components.environment.pixel_ratio;
                 self.mount.push(MountItem::Image {

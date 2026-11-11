@@ -148,6 +148,8 @@ struct Gestures {
     /// `panActivation`.
     gate: Option<Retained<crate::touch::PanGate>>,
     refresh: Option<Refresh>,
+    /// `ViewProps::context_menu`: a long press's native menu.
+    context_menu: Option<crate::context_menu::ContextMenu>,
 }
 
 /// The scroll view touched inside a cooperating pan. Its starting offset
@@ -3693,9 +3695,23 @@ impl Mounter {
     }
 
     /// Touch, accessibility and test properties.
-    fn set_view_props(&mut self, id: NodeId, props: ViewProps) {
+    fn set_view_props(&mut self, id: NodeId, mut props: ViewProps) {
         let (control, mtm) = (self.control.clone(), self.mtm);
+        let shared = self.shared.clone();
         let Some(s) = self.slot_mut(id) else { return };
+        // A disabled view shows no menu.
+        let menu = match props.accessibility.state.disabled {
+            true => Vec::new(),
+            false => std::mem::take(&mut props.context_menu),
+        };
+        crate::context_menu::ContextMenu::sync(
+            &mut s.gestures.context_menu,
+            s.native.view(),
+            menu,
+            &control,
+            &shared,
+            mtm,
+        );
         s.long_press_delay = props.long_press_delay;
         s.pan_scroll_handoff = props.pan_scroll_handoff;
         if let Some(pan) = &s.gestures.pan {
@@ -3879,6 +3895,48 @@ impl Mounter {
             EventKind::Menu,
             EventPayload::Map(vec![("id", nsh_core::PayloadValue::Number(id as f64))]),
         );
+    }
+
+    /// The shape and backdrop of a context menu's preview of `view`: its
+    /// rounded outline when it has rounded corners, and the background of
+    /// the nearest view around it that has one, which shows behind a view
+    /// without its own. Not the view's own background: while pressed it
+    /// may be its `active:` one.
+    pub(crate) fn context_menu_preview(
+        &self,
+        view: &UIView,
+    ) -> (
+        Option<objc2_core_foundation::CFRetained<objc2_core_graphics::CGMutablePath>>,
+        Option<Color>,
+    ) {
+        let slot_of = |v: &UIView| {
+            self.slot(v.tag() as NodeId)
+                .filter(|s| std::ptr::eq::<UIView>(s.native.view(), v))
+        };
+        let path = slot_of(view).and_then(|s| {
+            let size = view.bounds().size;
+            let radii = s.style.radii().fit(nsh_core::geometry::size(
+                Points(size.width as f32),
+                Points(size.height as f32),
+            ));
+            radii
+                .to_array()
+                .iter()
+                .any(|r| r.0 > 0.0)
+                .then(|| crate::decor::rounded(CGRect::new(CGPoint::ZERO, size), radii))
+        });
+        let mut background = None;
+        let mut current = view.superview();
+        while let Some(v) = current {
+            if let Some(s) = slot_of(&v)
+                && !s.style.background_color.is_transparent()
+            {
+                background = Some(s.style.background_color);
+                break;
+            }
+            current = v.superview();
+        }
+        (path, background)
     }
 
     /// The finger lifted on a pressable view.

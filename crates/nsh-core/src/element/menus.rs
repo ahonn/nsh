@@ -11,7 +11,9 @@
 //! closing is reported to both sides: each settles the one it showed.
 //! Header bar buttons use the same ids and the same `Menu` event; each
 //! binding of a page's items keeps a generation so replacing the items or
-//! the page going away drops its handlers.
+//! the page going away drops its handlers. Views' context menus
+//! ([`super::Interactive::context_menu`]) keep theirs the same way, a
+//! generation per binding of a view's items.
 
 use std::rc::Rc;
 
@@ -43,6 +45,11 @@ pub(crate) struct ViewMenus {
     pub(crate) header_generation: u64,
     /// Settles the context menu shown, once the platform reports it closed.
     pub(crate) closed: Option<AnswerSlot<()>>,
+    /// Views' context menu handlers: (generation, handlers), one generation
+    /// per binding of a view's `context_menu`.
+    pub(crate) context: Vec<(u64, Vec<(u32, MenuHandler)>)>,
+    /// Counts context menu bindings, as `app_generation`.
+    pub(crate) context_generation: u64,
 }
 
 impl ViewMenus {
@@ -59,6 +66,7 @@ impl ViewMenus {
             .iter()
             .chain(&self.popup)
             .chain(self.header.iter().flat_map(|(_, handlers)| handlers))
+            .chain(self.context.iter().flat_map(|(_, handlers)| handlers))
             .find(|(i, _)| *i == id)
             .map(|(_, h)| h.clone())
     }
@@ -76,6 +84,26 @@ impl ViewMenus {
     /// binding's (a later binding of the same page has another).
     pub(crate) fn take_header(&mut self, generation: u64) {
         self.header.retain(|(g, _)| *g != generation);
+    }
+
+    /// Keeps `handlers` for a binding of a view's context menu; returns its
+    /// generation so a cleanup can drop them when the binding is replaced
+    /// or the view goes.
+    pub(crate) fn push_context(&mut self, handlers: Vec<(u32, MenuHandler)>) -> u64 {
+        self.context_generation += 1;
+        let generation = self.context_generation;
+        self.context.push((generation, handlers));
+        generation
+    }
+
+    /// Takes the context menu handlers of `generation` out, for the caller
+    /// to drop once it no longer borrows these menus (a handler's captures
+    /// may reach them as they go).
+    pub(crate) fn take_context(&mut self, generation: u64) -> Vec<(u32, MenuHandler)> {
+        match self.context.iter().position(|(g, _)| *g == generation) {
+            Some(at) => self.context.swap_remove(at).1,
+            None => Vec::new(),
+        }
     }
 
     /// Settles the context menu shown, if there is one.

@@ -1470,6 +1470,44 @@ pub trait Interactive: Element {
         )
     }
 
+    /// A native menu of `items` that a long press on it, or inside it,
+    /// opens on a touch screen: on iOS a `UIContextMenuInteraction`, which
+    /// lifts the element as its preview and shows the items as a `UIMenu`
+    /// ([`MenuItem::symbol`], [`MenuItem::destructive`],
+    /// [`MenuItem::checked`], [`MenuItem::disabled`], submenus and
+    /// [`MenuItem::inline`] sections). A chosen item's
+    /// [`MenuItem::on_select`] runs under the owner that set the items.
+    /// The items can follow signals (`move || vec![..]`): each run replaces
+    /// the last one's items and handlers, and an empty list is no menu. The
+    /// menu takes the long press: the press under the finger ends without
+    /// `on_press`, and no `on_long_press` is raised inside it. A disabled
+    /// element has none. The other platforms show none yet; a desktop's
+    /// right click is [`Self::on_context_menu`] with
+    /// [`popup_menu_at`](super::desktop::popup_menu_at).
+    ///
+    /// ```ignore
+    /// view().on_press(open).context_menu(move || vec![
+    ///     MenuItem::new("Copy key").symbol("doc.on.doc").on_select(copy),
+    ///     MenuItem::submenu("", [
+    ///         MenuItem::new("Revoke").destructive(true).on_select(revoke),
+    ///     ])
+    ///     .inline(true),
+    /// ])
+    /// ```
+    ///
+    /// [`MenuItem::symbol`]: super::desktop::MenuItem::symbol
+    /// [`MenuItem::destructive`]: super::desktop::MenuItem::destructive
+    /// [`MenuItem::checked`]: super::desktop::MenuItem::checked
+    /// [`MenuItem::disabled`]: super::desktop::MenuItem::disabled
+    /// [`MenuItem::inline`]: super::desktop::MenuItem::inline
+    /// [`MenuItem::on_select`]: super::desktop::MenuItem::on_select
+    fn context_menu(mut self, items: impl IntoReactive<Vec<super::desktop::MenuItem>>) -> Self {
+        super::host::bind_prop(self.node(), items, |items| {
+            Prop::ContextMenu(super::context_menu::register(items))
+        });
+        self
+    }
+
     /// The selection across the texts of a selectable view
     /// ([`Self::selectable`]) changed: the selected text, as a copy gives
     /// it, empty once nothing is selected, and where it starts in the

@@ -154,9 +154,12 @@ pub struct Screen {
     /// The views under the mouse that care (`input::hoverable`), innermost
     /// first.
     hovered: Vec<NodeId>,
-    /// The context menu the app showed (`Menu.popup`), until it is chosen
-    /// from or closed.
+    /// The context menu the app showed (`Menu.popup`), or a long press
+    /// opened (a view's `context_menu`), until it is chosen from or closed.
     menu: Option<Arc<[nsh_core::desktop::MenuItem]>>,
+    /// The open menu is a view's `context_menu`, which no `Menu.popup`
+    /// waits on.
+    menu_of_view: bool,
     /// The window's size, when the driver knows it: what lies outside it
     /// (and no scroll view brings in) is not on screen.
     viewport: Option<Size<Points>>,
@@ -239,6 +242,8 @@ struct View {
     screen_order: Option<nsh_core::geometry::Axis>,
     /// A node of a canvas's drawing, not a view of its own.
     canvas_node: bool,
+    /// The menu a long press on it opens (`ViewProps::context_menu`).
+    context_menu: Vec<nsh_core::desktop::MenuItem>,
 }
 
 /// A span of a text view's text that takes presses ([`nsh_core::TextLink`]).
@@ -251,6 +256,12 @@ struct Span {
     /// Where they are in the view's text (UTF-16 units).
     start: u32,
     end: u32,
+}
+
+/// Whether a long press on `view` opens a context menu: it has one and is
+/// not disabled (a disabled view shows none).
+fn has_context_menu(view: &View) -> bool {
+    !view.context_menu.is_empty() && !view.disabled
 }
 
 /// Where the views around a view let it show, in the root's points.
@@ -482,6 +493,7 @@ impl Screen {
                 view.pan_activation = props.pan_activation;
                 view.pointer_events = props.pointer_events;
                 view.screen_order = props.screen_order;
+                view.context_menu = props.context_menu.clone();
             }
             MountItem::Keymap(keymap) => self.keymap = Some(keymap.clone()),
             MountItem::TrackStates { id, states } => {
@@ -634,6 +646,7 @@ impl Screen {
             Command::Desktop(desktop) => match &**desktop {
                 nsh_core::desktop::DesktopCommand::PopupMenu { items, .. } => {
                     self.menu = Some(items.clone());
+                    self.menu_of_view = false;
                 }
                 nsh_core::desktop::DesktopCommand::OpenWindow(open)
                     if !self.windows.iter().any(|(root, _)| *root == id) =>
@@ -1772,6 +1785,7 @@ impl Screen {
                 v.events.contains(EventKind::LongPress)
                     || v.events.contains(EventKind::Press)
                     || v.events.contains(EventKind::Touch)
+                    || has_context_menu(v)
             })?;
             (!self.disabled_from(id, Some(target))).then_some(target)
         })
@@ -2043,6 +2057,33 @@ impl Screen {
     /// The open context menu was chosen from or closed.
     pub(crate) fn menu_closed(&mut self) {
         self.menu = None;
+        self.menu_of_view = false;
+    }
+
+    /// Whether the open menu is one the app showed with `Menu.popup`, whose
+    /// answer waits for it to close (not a view's context menu).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn menu_is_popup(&self) -> bool {
+        self.menu.is_some() && !self.menu_of_view
+    }
+
+    /// The view whose context menu a long press on `id` opens: it, or the
+    /// nearest view around it with one (`ViewProps::context_menu`), as
+    /// iOS's `UIContextMenuInteraction` takes the touches inside its view.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn context_menu_view(&self, id: NodeId) -> Option<NodeId> {
+        self.up_to(id, has_context_menu)
+    }
+
+    /// Opens view `id`'s context menu: its inline sections between
+    /// separators, as a long press shows them.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn open_context_menu(&mut self, id: NodeId) {
+        let Some(items) = self.nodes.get(&id).map(|v| &v.context_menu) else {
+            return;
+        };
+        self.menu = Some(nsh_core::desktop::MenuItem::with_inline_expanded(items).into());
+        self.menu_of_view = true;
     }
 
     /// The view a right click on `id` asks for a context menu: it, or the

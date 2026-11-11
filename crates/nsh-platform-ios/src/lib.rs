@@ -23,6 +23,7 @@ mod blur;
 mod bottom_bar;
 mod canvas;
 mod component;
+mod context_menu;
 mod decor;
 #[cfg(feature = "dev")]
 pub mod dev;
@@ -33,6 +34,7 @@ mod image;
 mod input;
 mod interaction;
 mod keymap;
+mod menu;
 mod mount;
 mod native_view;
 mod navigation;

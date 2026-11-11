@@ -682,7 +682,7 @@ pub struct MenuAction {
     pub when: When,
     /// What it shows beside its label, the app's own image ([`menu_icon`]).
     pub icon: Option<ImageSource>,
-    /// An SF Symbol name beside its label in iOS header menus; ignored
+    /// An SF Symbol name beside its label in iOS menus (header buttons, context menus); ignored
     /// elsewhere (including macOS). Prefer this over putting a symbol name
     /// in [`Self::icon`], which is an image source.
     pub symbol: Option<String>,
@@ -723,7 +723,7 @@ pub enum MenuItem {
         /// What it shows beside its label ([`menu_icon`]), but for the
         /// top-level menus of a menu bar, which show their titles alone.
         icon: Option<ImageSource>,
-        /// An SF Symbol name beside its label in iOS header menus; ignored
+        /// An SF Symbol name beside its label in iOS menus (header buttons, context menus); ignored
         /// elsewhere (including macOS).
         symbol: Option<String>,
         /// An inline section: on iOS, `UIMenuOptions.displayInline` with
@@ -737,7 +737,7 @@ impl MenuItem {
     /// Expands [`inline`](Self::Submenu::inline) submenus into their items
     /// between separators (no leading or trailing separator, label not
     /// shown), for the desktops. Nested non-inline submenus are kept;
-    /// their children are expanded the same way. iOS header menus keep
+    /// their children are expanded the same way. iOS menus (header buttons, context menus) keep
     /// inline sections as they are.
     #[doc(hidden)]
     pub fn with_inline_expanded(items: &[MenuItem]) -> Vec<MenuItem> {

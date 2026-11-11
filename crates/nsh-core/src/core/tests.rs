@@ -20526,6 +20526,197 @@ mod rust_menus {
     }
 }
 
+/// Views' context menus (`Interactive::context_menu`): items reach the
+/// platform in the view's props, handlers run on the root's `Menu` event,
+/// and each binding's handlers go when it runs again or the view goes.
+mod rust_context_menus {
+    use std::cell::RefCell;
+
+    use super::*;
+    use crate::{
+        PayloadValue,
+        desktop::MenuItem as Item,
+        element::{Root, desktop::MenuItem},
+        prelude::*,
+    };
+
+    thread_local! {
+        static CHOSEN: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn chose(what: &str) {
+        CHOSEN.with(|c| c.borrow_mut().push(what.to_owned()));
+    }
+
+    fn chosen() -> Vec<String> {
+        CHOSEN.with(|c| c.borrow().clone())
+    }
+
+    /// A row whose menu follows a phase (0: suspend, 1: reinstate, 2: no
+    /// menu), a press that moves the phase on, and one that removes the
+    /// row.
+    #[component]
+    fn Rows() -> impl IntoElement {
+        let phase = signal(0u32);
+        let shown = signal(true);
+        view()
+            .child(text("Next").on_press(move || phase.update(|p| *p += 1)))
+            .child(text("Hide").on_press(move || shown.set(false)))
+            .child(dynamic(move || {
+                shown.get().then(|| {
+                    view()
+                        .child(text("Row"))
+                        .context_menu(move || match phase.get() {
+                            0 => vec![
+                                MenuItem::new("Copy key")
+                                    .symbol("doc.on.doc")
+                                    .on_select(|| chose("copy")),
+                                MenuItem::submenu(
+                                    "",
+                                    [MenuItem::new("Suspend")
+                                        .destructive(true)
+                                        .on_select(|| chose("suspend"))],
+                                )
+                                .inline(true),
+                            ],
+                            1 => vec![MenuItem::new("Reinstate").on_select(|| chose("reinstate"))],
+                            _ => Vec::new(),
+                        })
+                })
+            }))
+    }
+
+    /// The view given a context menu in `batch`, and the menu.
+    fn first_menu(batch: &MountBatch) -> (NodeId, Vec<Item>) {
+        batch
+            .items
+            .iter()
+            .find_map(|item| match item {
+                MountItem::ViewProps { id, props } if !props.context_menu.is_empty() => {
+                    Some((*id, props.context_menu.clone()))
+                }
+                _ => None,
+            })
+            .expect("a view with a context menu")
+    }
+
+    /// The context menu view `row` last got in `batch`.
+    fn menu_of(batch: &MountBatch, row: NodeId) -> Vec<Item> {
+        batch
+            .items
+            .iter()
+            .rev()
+            .find_map(|item| match item {
+                MountItem::ViewProps { id, props } if *id == row => {
+                    Some(props.context_menu.clone())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no props for {row}: {:?}", batch.items))
+    }
+
+    fn text_id(batch: &MountBatch, label: &str) -> NodeId {
+        batch
+            .items
+            .iter()
+            .find_map(|item| match item {
+                MountItem::Text { id, text, .. } if text.text == label => Some(*id),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no text {label}"))
+    }
+
+    fn action(item: &Item) -> &crate::desktop::MenuAction {
+        match item {
+            Item::Action(a) => a,
+            other => panic!("an action: {other:?}"),
+        }
+    }
+
+    fn choose(c: &mut Core<FakeEngine>, id: u32) {
+        let payload = EventPayload::Map(vec![("id", PayloadValue::Number(f64::from(id)))]);
+        assert!(c.component_event(ROOT_ID, EventKind::Menu, &payload));
+        // Nothing on screen changes.
+        let _ = c.commit();
+    }
+
+    /// The context menu bindings whose handlers are kept.
+    fn generations(c: &Core<FakeEngine>) -> usize {
+        c.components.executor.menus.borrow().context.len()
+    }
+
+    #[test]
+    fn a_views_context_menu_reaches_its_props_and_runs_its_items() {
+        CHOSEN.with(|c| c.borrow_mut().clear());
+        let mut c = core();
+        c.mount_root(&Root::of::<Rows>());
+        let batch = c.commit().unwrap();
+        let (row, menu) = first_menu(&batch);
+        assert_eq!(menu.len(), 2, "{menu:?}");
+        let copy = action(&menu[0]);
+        assert_eq!(copy.label, "Copy key");
+        assert_eq!(copy.symbol.as_deref(), Some("doc.on.doc"));
+        let Item::Submenu {
+            label,
+            items,
+            inline,
+            ..
+        } = &menu[1]
+        else {
+            panic!("an inline section: {menu:?}");
+        };
+        // Inline sections stay for the platform (a `UIMenu` displayed
+        // inline), as header menus keep them.
+        assert!(*inline && label.is_empty());
+        let suspend = action(&items[0]);
+        assert!(suspend.destructive);
+        let (copy, suspend) = (copy.id, suspend.id);
+        assert!(copy >= crate::element::menus::FIRST_ID && suspend != copy);
+        assert_eq!(generations(&c), 1);
+
+        choose(&mut c, copy);
+        choose(&mut c, suspend);
+        assert_eq!(chosen(), ["copy", "suspend"]);
+
+        // The items follow the signal: new ids, the old ones do nothing.
+        let next = text_id(&batch, "Next");
+        assert!(c.component_event(next, EventKind::Press, &EventPayload::None));
+        let menu = menu_of(&c.commit().unwrap(), row);
+        let reinstate = action(&menu[0]);
+        assert_eq!(reinstate.label, "Reinstate");
+        let reinstate = reinstate.id;
+        assert!(reinstate != copy && reinstate != suspend);
+        assert_eq!(generations(&c), 1, "the last run's handlers went");
+        choose(&mut c, copy);
+        choose(&mut c, reinstate);
+        assert_eq!(chosen(), ["copy", "suspend", "reinstate"]);
+
+        // An empty list is no menu, and keeps no handlers.
+        assert!(c.component_event(next, EventKind::Press, &EventPayload::None));
+        assert_eq!(menu_of(&c.commit().unwrap(), row), Vec::new());
+        assert_eq!(generations(&c), 0);
+        choose(&mut c, reinstate);
+        assert_eq!(chosen(), ["copy", "suspend", "reinstate"]);
+    }
+
+    #[test]
+    fn a_views_context_menu_handlers_go_with_the_view() {
+        CHOSEN.with(|c| c.borrow_mut().clear());
+        let mut c = core();
+        c.mount_root(&Root::of::<Rows>());
+        let batch = c.commit().unwrap();
+        let (_, menu) = first_menu(&batch);
+        let copy = action(&menu[0]).id;
+        assert_eq!(generations(&c), 1);
+        let hide = text_id(&batch, "Hide");
+        assert!(c.component_event(hide, EventKind::Press, &EventPayload::None));
+        c.commit().unwrap();
+        assert_eq!(generations(&c), 0);
+        choose(&mut c, copy);
+        assert!(chosen().is_empty());
+    }
+}
+
 #[test]
 fn file_drop_callbacks_keep_urls_and_disabled_targets_unmount_their_events() {
     use crate::prelude::*;

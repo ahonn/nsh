@@ -2856,6 +2856,12 @@ pub enum Prop {
     /// A property of a native control (web view, video), or `disabled`.
     #[prop(nested)]
     Native(NativeProp),
+    /// The view's context menu, as Rust sets it
+    /// ([`crate::element::Interactive::context_menu`]): the items a long
+    /// press on it shows natively (iOS), each action reporting its id as the
+    /// root's [`EventKind::Menu`]. Empty is none
+    /// ([`crate::ViewProps::context_menu`]).
+    ContextMenu(Vec<crate::desktop::MenuItem>),
 }
 
 /// Where a web view loads from.

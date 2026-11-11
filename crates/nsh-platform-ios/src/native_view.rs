@@ -44,6 +44,8 @@ pub(crate) struct NshViewIvars {
     /// A header bar button's custom view: its width and height constraints
     /// (the bar sizes such a view with Auto Layout).
     size: RefCell<Option<[Retained<NSLayoutConstraint>; 2]>>,
+    /// Its swipe actions' gesture and buttons ([`crate::swipe`]).
+    swipe: RefCell<Option<Retained<crate::swipe::SwipeRow>>>,
 }
 
 define_class!(
@@ -70,6 +72,19 @@ define_class!(
         #[unsafe(method(pointInside:withEvent:))]
         fn point_inside(&self, point: CGPoint, event: Option<&UIEvent>) -> bool {
             self.inside(point, event)
+        }
+
+        /// A view open on its swipe actions closes as it leaves the window
+        /// (a page pushed over it, a row recycled out of a list).
+        #[unsafe(method(willMoveToWindow:))]
+        fn will_move_to_window(&self, window: Option<&objc2_ui_kit::UIWindow>) {
+            if window.is_none()
+                && let Some(row) = self.swipe()
+            {
+                row.reset();
+            }
+            // SAFETY: calling the superclass implementation.
+            let _: () = unsafe { msg_send![super(self), willMoveToWindow: window] };
         }
 
         #[unsafe(method(isAccessibilityElement))]
@@ -156,6 +171,12 @@ impl NshView {
 
     fn hit(&self, point: CGPoint, event: Option<&UIEvent>) -> Option<Retained<UIView>> {
         let mode = self.ivars().props.borrow().pointer_events;
+        if mode != PointerEvents::None
+            && let Some(row) = self.swipe()
+            && let Some(button) = row.hit_buttons(self, point, event)
+        {
+            return Some(button);
+        }
         // SAFETY: calling the superclass implementation.
         let hit = || -> Option<Retained<UIView>> {
             unsafe { msg_send![super(self), hitTest: point, withEvent: event] }
@@ -229,10 +250,13 @@ impl NshView {
         let props = self.ivars().props.borrow();
         let a = &props.accessibility;
         // A container's label names the group VoiceOver enters, not one
-        // element that would hide what is inside it.
+        // element that would hide what is inside it. A view with swipe
+        // actions is one element that offers them, as a pressable is.
         !a.hidden
             && a.accessible.unwrap_or_else(|| {
-                self.ivars().pressable.get() || (a.label.is_some() && !is_container(a))
+                self.ivars().pressable.get()
+                    || !props.swipe_actions.is_empty()
+                    || (a.label.is_some() && !is_container(a))
             })
     }
 
@@ -268,7 +292,7 @@ impl NshView {
         let id = self.tag() as NodeId;
         let control = self.ivars().control.borrow().clone()?;
         let mtm = self.mtm();
-        let actions: Vec<_> = props
+        let mut actions: Vec<_> = props
             .accessibility
             .actions
             .iter()
@@ -294,6 +318,25 @@ impl NshView {
                 }
             })
             .collect();
+        // The swipe actions, by their labels: a press runs the action.
+        for (_, button) in props.swipe_actions.buttons().filter(|(_, b)| b.id != 0) {
+            let (control, id) = (control.clone(), button.id);
+            let handler: RcBlock<
+                dyn Fn(std::ptr::NonNull<UIAccessibilityCustomAction>) -> objc2::runtime::Bool,
+            > = RcBlock::new(move |_| {
+                crate::swipe::report(&control, id);
+                objc2::runtime::Bool::YES
+            });
+            // SAFETY: a block-based custom action (iOS 13+); UIKit copies the
+            // block.
+            actions.push(unsafe {
+                UIAccessibilityCustomAction::initWithName_actionHandler(
+                    UIAccessibilityCustomAction::alloc(mtm),
+                    &NSString::from_str(&button.label),
+                    RcBlock::as_ptr(&handler),
+                )
+            });
+        }
         (!actions.is_empty()).then(|| NSArray::from_retained_slice(&actions))
     }
 
@@ -380,6 +423,26 @@ impl NshView {
         // SAFETY: `UIAccessibilityFocus`'s informal protocol on NSObject.
         let focused: bool = unsafe { msg_send![self, accessibilityElementIsFocused] };
         (focused && !value.is_empty() && read != value).then_some(value)
+    }
+
+    /// Its swipe actions' gesture and buttons, if it has any.
+    pub(crate) fn swipe(&self) -> Option<Retained<crate::swipe::SwipeRow>> {
+        self.ivars().swipe.borrow().clone()
+    }
+
+    /// Gives it the swipe actions' gesture and buttons, or takes them away.
+    pub(crate) fn set_swipe(&self, row: Option<Retained<crate::swipe::SwipeRow>>) {
+        *self.ivars().swipe.borrow_mut() = row;
+    }
+
+    /// How far a swipe moved it (positive to the right): the last step of
+    /// its transform (`mount.rs` `dynamic_transform`).
+    pub(crate) fn swipe_offset(&self) -> f64 {
+        self.ivars()
+            .swipe
+            .borrow()
+            .as_ref()
+            .map_or(0.0, |row| row.offset())
     }
 
     /// The view is a selectable view (`ViewProps::selectable_view`).

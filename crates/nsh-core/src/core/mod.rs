@@ -4895,6 +4895,20 @@ impl<M: TextEngine> Core<M> {
                     flags |= dirty::VIEW_PROPS;
                 }
             }
+            Prop::LeadingSwipeActions(buttons) => {
+                let props = node.props.get_or_insert_default();
+                if props.swipe_actions.leading != buttons {
+                    props.swipe_actions.leading = buttons;
+                    flags |= dirty::VIEW_PROPS;
+                }
+            }
+            Prop::TrailingSwipeActions(buttons) => {
+                let props = node.props.get_or_insert_default();
+                if props.swipe_actions.trailing != buttons {
+                    props.swipe_actions.trailing = buttons;
+                    flags |= dirty::VIEW_PROPS;
+                }
+            }
             Prop::PanActivation(value) => {
                 let props = node.props.get_or_insert_default();
                 if props.pan_activation != value {

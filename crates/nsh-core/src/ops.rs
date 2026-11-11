@@ -2632,6 +2632,15 @@ pub enum Prop {
     /// to the platform as data: a terminal draws the text inside the view
     /// as a hyperlink to it. Set by the link component, never by JS.
     Href(Option<Arc<str>>),
+    /// The buttons a swipe toward the trailing edge reveals at the leading
+    /// edge ([`crate::swipe`]); empty has none. Set by Rust
+    /// (`Interactive::leading_swipe_actions`), never by JS yet.
+    #[prop(reset = Prop::LeadingSwipeActions(Vec::new()))]
+    LeadingSwipeActions(Vec<crate::swipe::SwipeButton>),
+    /// The buttons a swipe toward the leading edge reveals at the trailing
+    /// edge (`Interactive::trailing_swipe_actions`).
+    #[prop(reset = Prop::TrailingSwipeActions(Vec::new()))]
+    TrailingSwipeActions(Vec<crate::swipe::SwipeButton>),
     /// `panActivation`: the view's touch responder waits for a pan that the
     /// platform activates past an offset on one axis (and fails past one on
     /// the other), deciding on the main thread so the scroll views around

@@ -67,6 +67,7 @@ mod scrollable;
 pub(crate) mod services;
 pub(crate) mod status_bar;
 mod style;
+mod swipe;
 mod system;
 pub(crate) mod task;
 pub mod tokens;
@@ -178,6 +179,7 @@ pub use self::{
         AdaptiveColor, BorderCurve, FontWeight, LayoutDirection, StyleRefinement, Styled,
         WritingDirection,
     },
+    swipe::SwipeAction,
     system::{
         CallCx, Cleanup, ErrorClass, ErrorFields, Held, IntoThrown, JsError, Later, Local, Locals,
         Quotas, RefuseConnections, Stop, System, codes, io_code,

@@ -378,6 +378,9 @@ pub struct ViewProps {
     /// and a double or triple click selects across them
     /// ([`crate::selection::SelectionTexts::continues`]).
     pub continues_text: bool,
+    /// Buttons a sideways swipe reveals at the view's leading or trailing
+    /// edge (`Interactive::leading_swipe_actions`; iOS shows them).
+    pub swipe_actions: crate::swipe::SwipeActions,
 }
 
 impl ViewProps {

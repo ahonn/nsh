@@ -171,6 +171,7 @@ pub use crate::element::{
     Styled,
     SubmitBehavior,
     Svg,
+    SwipeAction,
     System,
     Task,
     Text,

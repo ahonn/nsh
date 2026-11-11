@@ -44,6 +44,7 @@ mod menus;
 mod net;
 mod pointer;
 mod speech;
+mod swipe;
 mod windows;
 
 pub use audio::AudioCall;

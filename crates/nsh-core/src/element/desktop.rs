@@ -966,7 +966,7 @@ pub struct MenuItem {
     enabled: bool,
     checked: Option<bool>,
     icon: Option<ImageSrc>,
-    /// An SF Symbol name for iOS header menus; see [`Self::symbol`].
+    /// An SF Symbol name for iOS menus (header buttons, context menus); see [`Self::symbol`].
     symbol: Option<String>,
     /// Destructive on iOS; ignored on the desktops; see [`Self::destructive`].
     destructive: bool,
@@ -1074,13 +1074,13 @@ impl MenuItem {
     /// off the main thread and shows once it has (one that fails to load
     /// leaves the item without an icon, with a warning). GTK's menus show
     /// no icons beside labels, and a terminal shows no images. For an SF
-    /// Symbol name for iOS header menus, use [`Self::symbol`] instead.
+    /// Symbol name for iOS menus (header buttons, context menus), use [`Self::symbol`] instead.
     pub fn icon(mut self, src: impl Into<ImageSrc>) -> Self {
         self.icon = Some(src.into());
         self
     }
 
-    /// An SF Symbol name beside its label in iOS header menus; ignored
+    /// An SF Symbol name beside its label in iOS menus (header buttons, context menus); ignored
     /// elsewhere (including macOS). Takes the place of [`Self::icon`] when
     /// both are set.
     pub fn symbol(mut self, name: impl Into<String>) -> Self {

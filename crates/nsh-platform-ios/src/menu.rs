@@ -1,5 +1,6 @@
-//! `UIMenu`s of [`MenuItem`]s, for every native menu: those of trailing
-//! header bar buttons ([`crate::navigation`]) first.
+//! `UIMenu`s of [`MenuItem`]s: the menus of trailing header bar buttons
+//! ([`crate::navigation`]) and views' context menus
+//! ([`crate::context_menu`]).
 //!
 //! An action with a handler carries the id the core gave it; choosing it
 //! hands the id to the menu's [`Select`], which reports it as the root's

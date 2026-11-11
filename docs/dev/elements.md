@@ -150,6 +150,16 @@ misses the deadline is not waited for again until it catches up (`docs/dev/macos
   positions are the view's bottom-start corner (`nsh_core::input::context_menu_anchor`, by the surface's direction),
   so a menu opened below it starts where the view does; `ContextMenu` puts the keyboard focus on its first enabled
   item then.
+- **Context menus of views** (Rust `Interactive::context_menu`, no TSX face yet): `desktop::MenuItem`s a long press on
+  the view, or inside it, opens natively. The core decodes them as the header's menus (`element/context_menu.rs`): an
+  id per handler, kept in `ViewMenus` under a generation per binding, dropped when the binding runs again or the view
+  goes; the items reach the platform in `ViewProps::context_menu`, and a chosen action is the root's `Menu` event with
+  its id. iOS attaches a `UIContextMenuInteraction` (`nsh-platform-ios` `context_menu.rs`, the `UIMenu` built by
+  `menu.rs` when the menu opens): the view lifted as its preview, its rounded outline the visible path, over the
+  background of the nearest view around it that has one. The menu takes the long press: once it shows, the
+  `PressRecognizer`s along the touch are cancelled (no `onPress` on release, the pressed style goes), and presses
+  inside a view with a menu raise no `onLongPress`. A disabled view has none. The headless driver's `longPress` opens
+  it (`chooseMenuItem`, `closeMenu`); the other platforms show none yet.
 - **Keyboard focus**: on macOS, the web and Linux, Tab (the keyboard focus) moves between stops, in tree order; a click
   presses without focusing, so a stop's `FOCUSED` state (`focus:` classes, `.focus(..)`) is keyboard focus, and
   `focus-visible:` is the same variant. Focus and presses are separate: `ViewProps::focus_stop` decides, from

@@ -1734,14 +1734,19 @@ impl Headless {
 
     /// The step `longPress(<selector>)`: holds a finger on what `selector`
     /// names (or the nearest view around it that hears long presses or
-    /// presses) for its `delayLongPress` (500 ms), as a long press does:
-    /// `onPressDown`, `onLongPress`, then `onPressUp`; no `onPress` follows.
+    /// presses, or has a context menu) for its `delayLongPress` (500 ms), as
+    /// a long press does: `onPressDown`, `onLongPress`, then `onPressUp`; no
+    /// `onPress` follows. Inside a view with a context menu
+    /// (`Interactive::context_menu`) the menu takes the hold, as on iOS: it
+    /// opens (`menu()`, `chooseMenuItem(<label>)`), no `onLongPress` is
+    /// raised and the touches are cancelled.
     pub fn long_press(&mut self, selector: &str) -> Result<(), String> {
         let parsed = Selector::parse(selector)?;
         self.step(format!("longPress({selector})"));
         let pick = self.screen.long_pressable(&parsed);
         let id = self.picked(pick, selector, "pressable view")?;
         let delay = self.screen.long_press_delay(id).unwrap_or(500.0).max(0.0);
+        let menu = self.screen.context_menu_view(id);
         self.activate_window_of(id);
         let path = self.screen.touch_path(id);
         if !path.is_empty() {
@@ -1750,10 +1755,17 @@ impl Headless {
         let payload = self.press_payload(id, None);
         self.send(id, EventKind::PressDown, payload.clone());
         self.elapse(Duration::from_secs_f64(f64::from(delay) / 1000.0));
-        self.send(id, EventKind::LongPress, payload.clone());
+        match menu {
+            Some(view) => self.screen.open_context_menu(view),
+            None => self.send(id, EventKind::LongPress, payload.clone()),
+        }
         self.send(id, EventKind::PressUp, payload);
         if !path.is_empty() {
-            self.send_touch(id, nsh_core::TouchPhase::End, path, None);
+            let phase = match menu {
+                Some(_) => nsh_core::TouchPhase::Cancel,
+                None => nsh_core::TouchPhase::End,
+            };
+            self.send_touch(id, phase, path, None);
         }
         self.done()
     }

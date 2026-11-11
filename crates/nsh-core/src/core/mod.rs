@@ -5104,6 +5104,13 @@ impl<M: TextEngine> Core<M> {
                     flags |= dirty::VIEW_PROPS;
                 }
             }
+            Prop::ContextMenu(items) => {
+                let props = node.props.get_or_insert_default();
+                if props.context_menu != items {
+                    props.context_menu = items;
+                    flags |= dirty::VIEW_PROPS;
+                }
+            }
             Prop::Accessibility(prop) => {
                 // A label changing on mounted props goes alone: it is
                 // the one that follows app state (a count, a value).

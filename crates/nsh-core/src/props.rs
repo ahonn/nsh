@@ -378,6 +378,14 @@ pub struct ViewProps {
     /// and a double or triple click selects across them
     /// ([`crate::selection::SelectionTexts::continues`]).
     pub continues_text: bool,
+    /// The context menu a long press on the view (or inside it) shows
+    /// natively ([`crate::element::Interactive::context_menu`]): iOS attaches
+    /// a `UIContextMenuInteraction`, the headless driver opens it on a long
+    /// press; the other platforms show none yet. A chosen action reports
+    /// its id as the root's [`crate::EventKind::Menu`], as header menus do.
+    /// Empty is none, and a disabled view (its accessibility state) shows
+    /// none.
+    pub context_menu: Vec<crate::desktop::MenuItem>,
 }
 
 impl ViewProps {

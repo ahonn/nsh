@@ -1,6 +1,8 @@
 //! The context menu steps: `rightClick(<selector>)`, the mouse's secondary
 //! button over a view, and choosing from (or closing) the menu the app
-//! then shows with `Menu.popup`, as a user does on a desktop.
+//! then shows with `Menu.popup`, as a user does on a desktop, or the
+//! context menu of a view (`Interactive::context_menu`) a long press opened
+//! (`longPress(<selector>)`), as on a touch screen.
 
 use nsh_core::{
     ContextMenuEvent, EventKind, EventPayload, PayloadValue, PointerType, ROOT_ID, geometry::point,
@@ -48,8 +50,8 @@ impl Headless {
         self.done()
     }
 
-    /// The actions of the context menu the app shows (`Menu.popup`), `None`
-    /// when none is open.
+    /// The actions of the context menu the app shows (`Menu.popup`, or a
+    /// view's a long press opened), `None` when none is open.
     pub fn menu(&self) -> Option<Vec<menu::Entry>> {
         self.screen.menu().map(menu::entries)
     }
@@ -81,12 +83,16 @@ impl Headless {
     }
 
     fn close_open_menu(&mut self) {
+        let popup = self.screen.menu_is_popup();
         self.screen.menu_closed();
-        // The app's `Menu.popup` promise settles.
-        self.menu_event(vec![
-            ("id", PayloadValue::Number(0.0)),
-            ("closed", PayloadValue::Bool(true)),
-        ]);
+        // The app's `Menu.popup` promise settles; a view's context menu
+        // closes natively, with nothing to settle.
+        if popup {
+            self.menu_event(vec![
+                ("id", PayloadValue::Number(0.0)),
+                ("closed", PayloadValue::Bool(true)),
+            ]);
+        }
     }
 
     fn menu_event(&self, fields: Vec<(&'static str, PayloadValue)>) {
@@ -131,5 +137,99 @@ impl Headless {
         };
         self.send(id, EventKind::FileDrop, payload);
         self.done()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nsh_core::{
+        element::{Root, desktop::MenuItem},
+        platform::Os,
+        prelude::*,
+    };
+    use nsh_engine::EngineConfig;
+
+    use super::*;
+
+    /// A row that opens on a press and has a context menu with an inline
+    /// section, and a view that hears long presses alone.
+    #[component]
+    fn Rows() -> impl IntoElement {
+        let log = signal(String::from("none"));
+        view()
+            .child(text(move || format!("log {}", log.get())))
+            .child(
+                view()
+                    .label("Key row")
+                    .on_press(move || log.set("opened".into()))
+                    .on_long_press(move || log.set("long".into()))
+                    .context_menu(move || {
+                        vec![
+                            MenuItem::new("Copy key")
+                                .symbol("doc.on.doc")
+                                .on_select(move || log.set("copied".into())),
+                            MenuItem::submenu(
+                                "",
+                                [MenuItem::new("Revoke")
+                                    .destructive(true)
+                                    .on_select(move || log.set("revoked".into()))],
+                            )
+                            .inline(true),
+                        ]
+                    })
+                    .child(text("Key")),
+            )
+            .child(
+                view()
+                    .label("Plain")
+                    .on_long_press(move || log.set("plain long".into()))
+                    .child(text("Plain text")),
+            )
+    }
+
+    fn start(os: Os) -> Headless {
+        let mut config = EngineConfig::new(Root::of::<Rows>());
+        config.environment.os = os;
+        let mut app = Headless::start(config).unwrap();
+        app.first_render().unwrap();
+        app
+    }
+
+    fn labels(app: &Headless) -> Option<Vec<String>> {
+        app.menu()
+            .map(|entries| entries.into_iter().map(|e| e.label).collect())
+    }
+
+    #[test]
+    fn a_long_press_opens_a_views_context_menu_on_a_phone_and_the_web() {
+        for os in [Os::Ios, Os::Web] {
+            let mut app = start(os);
+            app.long_press("Key row").unwrap();
+            // The menu takes the hold: no press, no long press.
+            assert_eq!(
+                labels(&app),
+                Some(vec!["Copy key".to_owned(), "Revoke".to_owned()]),
+                "{os:?}"
+            );
+            assert!(app.shows("log none"), "{os:?}");
+            app.choose_menu_item("Revoke").unwrap();
+            app.wait_for("log revoked").unwrap();
+            assert_eq!(app.menu(), None);
+
+            // Inside the row, the row's menu opens.
+            app.long_press("Key").unwrap();
+            assert_eq!(labels(&app).map(|l| l.len()), Some(2), "{os:?}");
+            app.close_menu().unwrap();
+            assert_eq!(app.menu(), None);
+            assert!(app.shows("log revoked"), "{os:?}");
+            assert!(app.choose_menu_item("Copy key").is_err());
+
+            // Presses and long presses elsewhere are as they were.
+            app.press("Key row").unwrap();
+            app.wait_for("log opened").unwrap();
+            app.long_press("Plain").unwrap();
+            app.wait_for("log plain long").unwrap();
+            assert_eq!(app.menu(), None);
+        }
     }
 }

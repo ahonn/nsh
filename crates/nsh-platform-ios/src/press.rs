@@ -6,6 +6,10 @@
 //! It stays in the possible state while tracking and only recognizes on
 //! release, so scroll views and pans on the same touches win whenever they
 //! start first; it then fails and reports `onPressUp`.
+//!
+//! A view's context menu takes the long press ([`crate::context_menu`]):
+//! inside one no `onLongPress` is reported, and the menu showing cancels
+//! the press.
 
 use std::cell::Cell;
 
@@ -93,10 +97,11 @@ define_class!(
             if link.is_none() && !ivars.own.get() {
                 return self.set_state(UIGestureRecognizerState::Failed);
             }
+            // A context menu around the touch takes the long press.
             let long_press = match link {
                 Some(l) => l.events.contains(EventKind::LongPress),
                 None => ivars.long_press.get(),
-            };
+            } && !crate::context_menu::takes_long_press(&touch.view().unwrap_or(view.clone()));
             ivars.start.set(touch.locationInView(Some(&view)));
             // SAFETY: UIEvent's `modifierFlags` (iOS 13.4), a
             // UIKeyModifierFlags (NSInteger).

@@ -256,6 +256,7 @@ events! {
     UrlScheme = "onUrlScheme": "The system handed the app a URL that opens it (root only; payload: `url`, [`crate::url_scheme::URL`]); the core keeps those of the schemes the app claims ([`crate::url_scheme`]).",
     Audio = "onAudio": "A sound or a player reported (root only; payload: [`EventPayload::Audio`]).",
     Window = "onWindow" as "": "A window of the app's own reported its state, a close press or that it closed (on its root node; desktops; payload: [`EventPayload::Window`]).",
+    Share = "onShare": "A [`Command::Share`] request finished: the share sheet closed (root only; payload: `id`, `completed`: whether the user shared, `activity`: the activity they chose, absent when none).",
 }
 
 /// What an input holds, for the system's autofill and suggestions
@@ -2136,6 +2137,21 @@ pub enum Command {
         name: Arc<str>,
         /// Its arguments (any JSON value).
         args: crate::JsonValue,
+    },
+    /// Show the system's share sheet with `items` (on the root;
+    /// [`crate::share`], [`crate::element::share`]) and report how it
+    /// closed as [`EventKind::Share`] `id`, once. Where the sheet is a
+    /// popover (iPad, Mac), it points at node `anchor`'s view, else at the
+    /// middle of the surface. Sent only on platforms whose
+    /// [`crate::platform::Environment::share`] is set, with items
+    /// [`crate::share`] checked.
+    Share {
+        /// The request.
+        id: u32,
+        /// What to share, in order (at least one).
+        items: Vec<crate::share::ShareItem>,
+        /// The view a popover points at; `None`: the surface.
+        anchor: Option<NodeId>,
     },
 }
 

@@ -86,6 +86,7 @@ struct EnvSignals {
     locale_settings: Memo<LocaleSettings>,
     lifecycle: Memo<Lifecycle>,
     screen_color: Memo<bool>,
+    share: Memo<bool>,
 }
 
 impl EnvSignals {
@@ -115,6 +116,7 @@ impl EnvSignals {
                 locale_settings: part!(locale_settings),
                 lifecycle: part!(lifecycle),
                 screen_color: part!(screen_color),
+                share: part!(share),
             }
         })
     }
@@ -531,6 +533,40 @@ pub fn announce_for_accessibility(message: impl Into<String>) {
 /// Android; elsewhere nothing happens.
 pub fn haptic(haptic: crate::Haptic) {
     act(super::services::haptic(haptic));
+}
+
+/// Whether the platform has a share sheet ([`share`]): iOS and Mac
+/// Catalyst.
+pub fn can_share() -> bool {
+    env(|e| e.share)
+}
+
+/// Shows the system's share sheet with `items` (text, links, local files:
+/// [`crate::share::ShareItem`]), to await in a task: how it closed
+/// ([`crate::share::ShareResult`]: whether the user shared, through which
+/// activity), or why the items cannot be shared (none, a link that is no
+/// absolute URL, a file that is not there; [`crate::share`]). Where the
+/// platform has no share sheet ([`can_share`]) it resolves at once, not
+/// completed. Where the sheet is a popover (iPad, Mac) it points at the
+/// middle of the surface: [`share_from`] points it at a view.
+pub fn share(
+    items: impl IntoIterator<Item = crate::share::ShareItem>,
+) -> Answer<Result<crate::share::ShareResult, String>> {
+    let (answer, action) = super::services::share(items.into_iter().collect(), None);
+    act(action);
+    answer
+}
+
+/// As [`share`], with the sheet's popover (iPad, Mac) pointing at the
+/// element `anchor` names, the control the user pressed to share; at the
+/// middle of the surface while no rendered element carries the ref.
+pub fn share_from(
+    items: impl IntoIterator<Item = crate::share::ShareItem>,
+    anchor: &super::ElementRef,
+) -> Answer<Result<crate::share::ShareResult, String>> {
+    let (answer, action) = super::services::share(items.into_iter().collect(), anchor.node());
+    act(action);
+    answer
 }
 
 /// Runs `f` with the app's storage (`nsh/storage`, [`crate::storage::Storage`]):

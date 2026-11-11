@@ -323,6 +323,8 @@ objc2-ui-kit = { version = "0.3.2", default-features = false, features = [
   "NSText",
   "NSTextContainer",
   "UIActivityIndicatorView",
+  "UIActivity",
+  "UIActivityViewController",
   "UIApplication",
   "UIColor",
   "UIControl",

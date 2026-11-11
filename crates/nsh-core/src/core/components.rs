@@ -621,6 +621,10 @@ pub(super) struct Components {
     /// Colors being picked on the screen, by request id: their answers.
     screen_colors: FxHashMap<u32, AnswerSlot<Option<crate::Hsla>>>,
     next_screen_color: u32,
+    /// Share sheets showing ([`crate::share`]), by request id: their
+    /// answers.
+    shares: FxHashMap<u32, AnswerSlot<Result<crate::share::ShareResult, String>>>,
+    next_share: u32,
     /// Requests on local paths (`pick_paths`, `open_path`, ...), by
     /// request id: their answers.
     file_requests: FxHashMap<u32, FileAnswer>,
@@ -724,6 +728,8 @@ impl Default for Components {
             next_url_open: 0,
             screen_colors: FxHashMap::default(),
             next_screen_color: 1,
+            shares: FxHashMap::default(),
+            next_share: 1,
             file_requests: FxHashMap::default(),
             next_file_request: 1,
             next_clipboard_read: 1,
@@ -5601,6 +5607,29 @@ impl<M: TextEngine> Core<M> {
                     command: Command::PickScreenColor { id },
                 });
             }
+            Action::Share {
+                items,
+                anchor,
+                answer,
+            } => {
+                if !self.components.environment.share {
+                    let result = crate::share::ShareResult::default();
+                    answer.borrow_mut().deliver(Ok(result));
+                    return;
+                }
+                if let Err(refused) = crate::share::check(&items) {
+                    log::warn!("{refused}");
+                    answer.borrow_mut().deliver(Err(refused));
+                    return;
+                }
+                let id = self.components.next_share;
+                self.components.next_share = id.wrapping_add(1);
+                self.components.shares.insert(id, answer);
+                let _ = self.apply_op(Op::Command {
+                    id: crate::ROOT_ID,
+                    command: Command::Share { id, items, anchor },
+                });
+            }
             Action::FileRequest(request, answer) => {
                 use crate::file_dialog::FileRequest;
                 if !self.components.environment.file_requests {
@@ -6038,6 +6067,30 @@ impl<M: TextEngine> Core<M> {
                 let color = number("color").map(|packed| crate::Color(packed as u32).into());
                 if let Some(answer) = self.components.screen_colors.remove(&(request as u32)) {
                     answer.borrow_mut().deliver(color);
+                }
+                true
+            }
+            EventKind::Share if id == crate::ROOT_ID => {
+                let Some(request) = number("id") else {
+                    return false;
+                };
+                let EventPayload::Map(entries) = payload else {
+                    return false;
+                };
+                let mut result = crate::share::ShareResult::default();
+                for (key, value) in entries {
+                    match (*key, value) {
+                        ("completed", crate::PayloadValue::Bool(completed)) => {
+                            result.completed = *completed;
+                        }
+                        ("activity", crate::PayloadValue::Str(activity)) => {
+                            result.activity = Some(activity.clone());
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(answer) = self.components.shares.remove(&(request as u32)) {
+                    answer.borrow_mut().deliver(Ok(result));
                 }
                 true
             }

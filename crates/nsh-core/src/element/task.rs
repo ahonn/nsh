@@ -170,6 +170,14 @@ pub(crate) enum Action {
     /// How long the node's transitions run with the styles of the commit
     /// the action goes out with; the time resolves the slot.
     TransitionTime(NodeId, AnswerSlot<std::time::Duration>),
+    /// Shows the system's share sheet with the items, a popover pointing
+    /// at the node's view; how it closed (or why the items cannot be
+    /// shared) resolves the slot.
+    Share {
+        items: Vec<crate::share::ShareItem>,
+        anchor: Option<NodeId>,
+        answer: AnswerSlot<Result<crate::share::ShareResult, String>>,
+    },
 }
 
 /// What a speech recognition session asks of the core

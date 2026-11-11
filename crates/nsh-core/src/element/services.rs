@@ -132,6 +132,23 @@ pub(crate) fn haptic(haptic: crate::Haptic) -> Action {
     Action::Command(ROOT_ID, Command::Haptic(haptic))
 }
 
+/// Shows the system's share sheet with `items`, a popover pointing at
+/// node `anchor`'s view.
+pub(crate) fn share(
+    items: Vec<crate::share::ShareItem>,
+    anchor: Option<crate::NodeId>,
+) -> (Answer<Result<crate::share::ShareResult, String>>, Action) {
+    let (answer, slot) = Answer::new();
+    (
+        answer,
+        Action::Share {
+            items,
+            anchor,
+            answer: slot,
+        },
+    )
+}
+
 /// Turns the performance monitor on or off.
 pub(crate) fn perf_monitor(enabled: bool) -> Action {
     Action::Command(ROOT_ID, Command::PerfMonitor(enabled))

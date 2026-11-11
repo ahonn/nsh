@@ -261,6 +261,11 @@ pub use crate::element::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::element::{background, blocking};
+/// The system's share sheet ([`crate::share`]).
+pub use crate::{
+    element::{can_share, share, share_from},
+    share::{ShareItem, ShareResult},
+};
 /// Translations ([`crate::i18n`]).
 pub use crate::{
     i18n::{available_locales, set_locale},

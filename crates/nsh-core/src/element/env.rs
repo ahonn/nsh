@@ -78,6 +78,9 @@ pub struct Environment {
     /// The platform gives web views trusted input
     /// ([`crate::platform::Environment::web_input`]).
     pub web_input: bool,
+    /// The platform shows the system's share sheet
+    /// ([`crate::platform::Environment::share`]).
+    pub share: bool,
 }
 
 impl Default for Environment {
@@ -111,6 +114,7 @@ impl Default for Environment {
             audio: false,
             cell: None,
             web_input: false,
+            share: false,
         }
     }
 }

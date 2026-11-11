@@ -287,6 +287,10 @@ pub struct Environment {
     /// ([`crate::Command::SendInput`], macOS); without it, the command
     /// does nothing.
     pub web_input: bool,
+    /// The platform shows the system's share sheet
+    /// ([`crate::Command::Share`], [`crate::share`]); without it, a share
+    /// answers "not completed" at once.
+    pub share: bool,
 }
 
 impl Environment {
@@ -335,6 +339,7 @@ impl Default for Environment {
             audio: false,
             cell: None,
             web_input: false,
+            share: false,
         }
     }
 }

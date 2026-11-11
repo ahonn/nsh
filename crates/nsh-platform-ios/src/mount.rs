@@ -1742,6 +1742,17 @@ impl Mounter {
             (Command::Speech(command), _) if id == nsh_core::ROOT_ID => {
                 crate::speech::command(&self.control, &command);
             }
+            (
+                Command::Share {
+                    id: request,
+                    items,
+                    anchor,
+                },
+                native,
+            ) if id == nsh_core::ROOT_ID => {
+                let anchor = anchor.and_then(|a| self.slot(a)).map(|s| s.native.view());
+                crate::share::share(request, &items, anchor, native.view(), &self.control);
+            }
             (Command::Audio(command), _) if id == nsh_core::ROOT_ID => {
                 use nsh_core::image::loader::AssetBase as Base;
                 let base = self.images.asset_base().map(|base| match base {

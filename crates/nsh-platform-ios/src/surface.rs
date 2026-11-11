@@ -394,6 +394,8 @@ impl RootView {
             notifications: true,
             // AVAudioEngine and AVPlayer.
             audio: true,
+            // `UIActivityViewController` (`share.rs`), Catalyst included.
+            share: true,
             // No file dialogs, file manager or trash (Catalyst included):
             // the default, so the core answers those requests.
             ..Environment::default()

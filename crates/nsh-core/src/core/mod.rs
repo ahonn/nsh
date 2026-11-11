@@ -9643,7 +9643,8 @@ fn shown_by(item: &MountItem) -> Shown {
                 | C::Audio { .. }
                 | C::Notification { .. }
                 | C::Desktop { .. }
-                | C::HostCall { .. } => Shown::Nothing,
+                | C::HostCall { .. }
+                | C::Share { .. } => Shown::Nothing,
                 // The design tokens: every view's colors.
                 C::Tokens { .. } => Shown::Everywhere,
                 _ => Shown::View(*id),

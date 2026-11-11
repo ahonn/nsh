@@ -43,10 +43,12 @@ mod live;
 mod menus;
 mod net;
 mod pointer;
+mod share;
 mod speech;
 mod windows;
 
 pub use audio::AudioCall;
+pub use share::ShareAnswer;
 mod stub;
 
 use std::{
@@ -314,6 +316,8 @@ pub struct Headless {
     picks: Picks,
     /// The color the user picks on the screen ([`Headless::on_screen_color`]).
     screen_color: Option<nsh_core::Hsla>,
+    /// The share sheets the app showed ([`Headless::on_share`]).
+    shares: share::Shares,
     /// The paths the user picks in the open dialog
     /// ([`Headless::on_pick_paths`]).
     picked_paths: Vec<std::path::PathBuf>,
@@ -431,6 +435,7 @@ impl Headless {
             dialogs: Dialogs::Default,
             picks: Picks::Default,
             screen_color: None,
+            shares: share::Shares::default(),
             picked_paths: Vec::new(),
             save_path: None,
             speech,
@@ -861,6 +866,7 @@ impl Headless {
         for item in &batch.items {
             self.animator.apply(item);
         }
+        self.shares.record(&batch.items);
         if let Some(windows) = &mut self.windows {
             for item in &batch.items {
                 match item {
@@ -946,6 +952,7 @@ impl Headless {
             }
             control.dispatch_event(ROOT_ID, EventKind::ScreenColor, EventPayload::Map(fields));
         }
+        self.shares.answer(&control);
         for (id, request) in self.screen.take_file_answers() {
             use nsh_core::file_dialog::FileRequest;
             let paths = match request {

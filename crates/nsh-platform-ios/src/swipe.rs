@@ -40,6 +40,10 @@
 //!   on the open edge keep it open (only the ids change); others close it.
 //!   A view leaving its window closes at once; removing the actions takes
 //!   the gesture, the tray and the offset away.
+//! - Each button is its own color: the system's red for a destructive one,
+//!   the app's tint, else blue at the leading edge and gray at the trailing
+//!   edge; a button the color of the one outside it (two destructive ones)
+//!   is a shade darker, so the two read as two buttons.
 //! - VoiceOver offers the actions as the view's custom actions
 //!   (`native_view.rs`); the tray is hidden from it.
 
@@ -96,6 +100,10 @@ const ICON_GAP: CGFloat = 4.0;
 /// The point size of a button's symbol.
 const ICON_SIZE: CGFloat = 20.0;
 
+/// How much darker (black over it) a button is than the one beside it of
+/// the same color.
+const SHADE: CGFloat = 0.22;
+
 /// One button in the tray.
 struct Button {
     control: Retained<UIControl>,
@@ -104,6 +112,9 @@ struct Button {
     /// revealed) shows its inner part, as if it slid out from under the
     /// view.
     content: Retained<UIView>,
+    /// The symbol, if it has one, over the label.
+    icon: Option<Retained<UIView>>,
+    label: Retained<UILabel>,
     /// Darkens the button while it is pressed.
     dim: Retained<UIView>,
     /// Its own width: the label's, with padding, at least
@@ -714,6 +725,7 @@ impl SwipeRow {
                 CGPoint::new(content_x, 0.0),
                 CGSize::new(button.width, height),
             ));
+            button.lay_out_content(height);
         }
     }
 
@@ -727,7 +739,11 @@ impl SwipeRow {
             let made: Vec<Button> = actions
                 .edge(edge)
                 .iter()
-                .map(|b| self.make_button(b, edge, mtm))
+                .enumerate()
+                .map(|(i, b)| {
+                    let outer = i.checked_sub(1).map(|o| &actions.edge(edge)[o]);
+                    self.make_button(b, outer, edge, mtm)
+                })
                 .collect();
             for button in &made {
                 self.ivars().tray.addSubview(&button.control);
@@ -763,16 +779,35 @@ impl SwipeRow {
         self.ivars().tray_edge.set(None);
     }
 
-    fn make_button(&self, button: &SwipeButton, edge: SwipeEdge, mtm: MainThreadMarker) -> Button {
+    /// A button for `button`; `outer` is the one beside it toward the
+    /// outer edge, if any.
+    fn make_button(
+        &self,
+        button: &SwipeButton,
+        outer: Option<&SwipeButton>,
+        edge: SwipeEdge,
+        mtm: MainThreadMarker,
+    ) -> Button {
         let control = UIControl::new(mtm);
         control.setTag(NO_NODE);
         control.setClipsToBounds(true);
         control.setBackgroundColor(Some(&background(button, edge)));
-        control.setAutoresizingMask(UIViewAutoresizing::FlexibleHeight);
+        // A button the color of the one beside it (two destructive ones)
+        // is a shade darker, so each shows as a button of its own.
+        if outer.is_some_and(|o| same_fill(o, button)) {
+            let shade = UIView::new(mtm);
+            shade.setTag(NO_NODE);
+            shade.setUserInteractionEnabled(false);
+            shade.setBackgroundColor(Some(&UIColor::colorWithWhite_alpha(0.0, SHADE)));
+            shade.setAutoresizingMask(
+                UIViewAutoresizing::FlexibleWidth | UIViewAutoresizing::FlexibleHeight,
+            );
+            // Sized with the button: it is made zero-sized, and grows with it.
+            control.addSubview(&shade);
+        }
         let content = UIView::new(mtm);
         content.setTag(NO_NODE);
         content.setUserInteractionEnabled(false);
-        content.setAutoresizingMask(UIViewAutoresizing::FlexibleHeight);
         let dim = UIView::new(mtm);
         dim.setTag(NO_NODE);
         dim.setUserInteractionEnabled(false);
@@ -808,35 +843,10 @@ impl SwipeRow {
         let width = (label_size.width.max(icon_size.width) + 2.0 * PADDING)
             .max(MIN_BUTTON_WIDTH.0 as CGFloat)
             .ceil();
-        // The symbol over the label, centered in the content as tall as the
-        // button whatever its height.
-        let stack =
-            icon_size.height + if icon.is_some() { ICON_GAP } else { 0.0 } + label_size.height;
-        let center =
-            UIViewAutoresizing::FlexibleTopMargin | UIViewAutoresizing::FlexibleBottomMargin;
-        // Laid out in a content 100 points tall; the margins keep it
-        // centered in the button's height.
-        let reference = 100.0;
-        let mut y = (reference - stack) / 2.0;
         if let Some(icon) = &icon {
-            icon.setFrame(CGRect::new(
-                CGPoint::new((width - icon_size.width) / 2.0, y),
-                icon_size,
-            ));
-            icon.setAutoresizingMask(center);
             content.addSubview(icon);
-            y += icon_size.height + ICON_GAP;
         }
-        label.setFrame(CGRect::new(
-            CGPoint::new((width - label_size.width) / 2.0, y),
-            label_size,
-        ));
-        label.setAutoresizingMask(center);
         content.addSubview(&label);
-        content.setFrame(CGRect::new(
-            CGPoint::new(0.0, 0.0),
-            CGSize::new(width, reference),
-        ));
 
         let target: &AnyObject = self;
         // SAFETY: the actions are implemented by the row, which holds the
@@ -863,6 +873,8 @@ impl SwipeRow {
         Button {
             control,
             content,
+            icon,
+            label,
             dim,
             width,
         }
@@ -914,6 +926,43 @@ impl SwipeRow {
             Some(&completion),
             view.mtm(),
         );
+    }
+}
+
+impl Button {
+    /// The symbol over the label, both centered in the content, which is
+    /// as wide as the button's own width and as tall as the view. Laid out
+    /// here rather than by autoresizing, which the content's first, empty
+    /// frame would throw off.
+    fn lay_out_content(&self, height: CGFloat) {
+        let label = self.label.bounds().size;
+        let icon = self
+            .icon
+            .as_ref()
+            .map_or(CGSize::new(0.0, 0.0), |i| i.bounds().size);
+        let gap = if self.icon.is_some() { ICON_GAP } else { 0.0 };
+        let mut y = ((height - (icon.height + gap + label.height)) / 2.0).round();
+        if let Some(view) = &self.icon {
+            view.setFrame(CGRect::new(
+                CGPoint::new(((self.width - icon.width) / 2.0).round(), y),
+                icon,
+            ));
+            y += icon.height + gap;
+        }
+        self.label.setFrame(CGRect::new(
+            CGPoint::new(((self.width - label.width) / 2.0).round(), y),
+            label,
+        ));
+    }
+}
+
+/// Whether two buttons have the same fill: both destructive, both the
+/// same tint, or both the edge's default.
+fn same_fill(a: &SwipeButton, b: &SwipeButton) -> bool {
+    match (a.destructive, b.destructive) {
+        (true, true) => true,
+        (false, false) => a.tint == b.tint,
+        _ => false,
     }
 }
 

@@ -202,8 +202,8 @@ misses the deadline is not waited for again until it catches up (`docs/dev/macos
   its layer's transform and puts the buttons in a tray outside its bounds (a view that clips its content clips
   them); the scroll views around and iOS 26's content pop wait for its pan to fail, it waits for the edge pop, and
   a move toward going back that starts within 24 pt of the window's leading edge goes back while the stack can.
-  One view per surface is open at a time; a scroll, a press beside it or a tap on it closes it. VoiceOver gets the
-  actions as custom actions. The headless driver's `swipe_actions` / `swipe_action` read and press them; the
+  One view per surface is open at a time; a scroll, a press beside it or a tap on it closes it. A button the color of the one outside it (two destructive ones) is a shade darker.
+  VoiceOver gets the actions as custom actions. The headless driver's `swipe_actions` / `swipe_action` read and press them; the
   other platforms do not show them yet.
 - **Imperative calls**: nodes have `focus()`, `blur()` (inputs, and views that take presses where they are stops of
   the keyboard focus: "Keyboard focus" above) and `scrollTo({ x, y, animated })` (use `ref`); lists also

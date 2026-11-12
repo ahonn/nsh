@@ -26,10 +26,17 @@ fn native(registry: &mut Registry) {
 #[component]
 pub fn Gallery() -> impl IntoElement {
     shell::restore();
-    view()
-        .flex_1()
-        .bg(colors::BACKGROUND)
-        // Made again when the window crosses the threshold, as TS remounts
-        // its shell: what is open carries over.
-        .child(when(desktop, shell::desktop_layout).otherwise(shell::phone))
+    let split = global::<demos::split::SplitOpen>();
+    view().flex_1().bg(colors::BACKGROUND).child(
+        // The split view demo takes the window, as an app's root layout.
+        when(
+            move || split.get().0,
+            || demos::split::mail_split().into_element(),
+        )
+        .otherwise(|| {
+            // Made again when the window crosses the threshold, as TS
+            // remounts its shell: what is open carries over.
+            when(desktop, shell::desktop_layout).otherwise(shell::phone)
+        }),
+    )
 }

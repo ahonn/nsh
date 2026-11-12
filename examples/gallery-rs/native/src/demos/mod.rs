@@ -15,6 +15,7 @@ mod photos;
 mod physics;
 mod scrolling;
 mod spacex;
+pub(crate) mod split;
 mod stocks;
 mod storage;
 mod styles;
@@ -126,6 +127,12 @@ pub(crate) static GROUPS: &[Group] = &[
                 detail: "Header options, modals, the back button, safe areas",
                 icon: IconName::Nav,
                 content: || navigation::navigation().into_element(),
+            },
+            Demo {
+                name: "Split view",
+                detail: "Three columns of navigation stacks: a sidebar, a list and a detail",
+                icon: IconName::Nav,
+                content: || split::launcher().into_element(),
             },
             Demo {
                 name: "Form",

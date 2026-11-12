@@ -194,6 +194,17 @@ misses the deadline is not waited for again until it catches up (`docs/dev/macos
   GPUI leave `focus()` on views to them; iOS and Android focus inputs only.
 - **`onPanEnd` / `onPanStart`** carry `value` (`{ x?, y? }`, the axes `pan` binds): the bound pan values at that moment (a drag may grab a value mid
   animation), for snapping.
+- **Swipe actions** (Rust: `Interactive::leading_swipe_actions` / `trailing_swipe_actions` with `SwipeAction`s; no
+  JS face yet): buttons a sideways swipe reveals at a view's edges, as Mail's rows show them. They reach the
+  platforms as `ViewProps::swipe_actions` (`nsh_core::swipe`, which also holds the gesture's shared decisions); a
+  button's handler has an id in `ViewMenus`, one generation per binding, and a press reports it as the root's `Menu`
+  event, as header bar buttons do. A full swipe only reveals. iOS (`swipe.rs`) moves the view by the last step of
+  its layer's transform and puts the buttons in a tray outside its bounds (a view that clips its content clips
+  them); the scroll views around and iOS 26's content pop wait for its pan to fail, it waits for the edge pop, and
+  a move toward going back that starts within 24 pt of the window's leading edge goes back while the stack can.
+  One view per surface is open at a time; a scroll, a press beside it or a tap on it closes it. VoiceOver gets the
+  actions as custom actions. The headless driver's `swipe_actions` / `swipe_action` read and press them; the
+  other platforms do not show them yet.
 - **Imperative calls**: nodes have `focus()`, `blur()` (inputs, and views that take presses where they are stops of
   the keyboard focus: "Keyboard focus" above) and `scrollTo({ x, y, animated })` (use `ref`); lists also
   `scrollToIndex({ index, viewPosition, viewOffset, animated })`, `scrollToEnd()`, `scrollToOffset()`; `Keyboard.dismiss()` (`nsh`).

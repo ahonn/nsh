@@ -244,6 +244,8 @@ struct View {
     canvas_node: bool,
     /// The menu a long press on it opens (`ViewProps::context_menu`).
     context_menu: Vec<nsh_core::desktop::MenuItem>,
+    /// The buttons a swipe reveals at its edges.
+    swipe_actions: nsh_core::swipe::SwipeActions,
 }
 
 /// A span of a text view's text that takes presses ([`nsh_core::TextLink`]).
@@ -494,6 +496,7 @@ impl Screen {
                 view.pointer_events = props.pointer_events;
                 view.screen_order = props.screen_order;
                 view.context_menu = props.context_menu.clone();
+                view.swipe_actions = props.swipe_actions.clone();
             }
             MountItem::Keymap(keymap) => self.keymap = Some(keymap.clone()),
             MountItem::TrackStates { id, states } => {
@@ -1768,6 +1771,19 @@ impl Screen {
             Pick::One(id) if self.scroll(id).is_some_and(|s| s.locked) => Pick::Disabled,
             pick => pick,
         }
+    }
+
+    /// The view the selector names, for a swipe: it, or its nearest
+    /// ancestor with swipe actions (a list row, named by a text in it).
+    pub(crate) fn swipeable(&self, selector: &Selector) -> Pick {
+        self.pick(selector, |id| {
+            self.up_to(id, |v| !v.swipe_actions.is_empty())
+        })
+    }
+
+    /// The swipe actions of `id`.
+    pub(crate) fn swipe_actions(&self, id: NodeId) -> Option<&nsh_core::swipe::SwipeActions> {
+        self.nodes.get(&id).map(|v| &v.swipe_actions)
     }
 
     /// The view the selector names, for a drag: the finger lands on it.

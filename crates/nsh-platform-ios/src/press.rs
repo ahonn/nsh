@@ -83,7 +83,11 @@ define_class!(
             let (Some(view), Some(touch)) = (self.view(), touches.anyObject()) else {
                 return self.set_state(UIGestureRecognizerState::Failed);
             };
-            if touches.count() > 1
+            // A view open on its swipe actions takes a press on it or
+            // beside it to close (`swipe::SwipeGroup::takes_press`); asked
+            // first, so a touch on a control closes it too.
+            if self.ivars().target.swipes().takes_press(&touch)
+                || touches.count() > 1
                 || self.handled_deeper(&touch, &view)
                 || !self.ivars().target.press_allowed(&view)
             {

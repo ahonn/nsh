@@ -1579,6 +1579,31 @@ pub trait Interactive: Element {
         )
     }
 
+    /// Buttons a swipe toward the trailing edge reveals at the leading edge
+    /// (a swipe right, left to right), as Mail's rows show them: for
+    /// reversible actions. A value, or a closure read in a binding (a list
+    /// row's item); empty has none. iOS shows them and offers them to
+    /// VoiceOver as the view's actions; elsewhere they do nothing yet.
+    fn leading_swipe_actions(
+        mut self,
+        actions: impl IntoReactive<Vec<super::SwipeAction>>,
+    ) -> Self {
+        super::swipe::bind(self.node(), crate::swipe::SwipeEdge::Leading, actions);
+        self
+    }
+
+    /// Buttons a swipe toward the leading edge reveals at the trailing edge
+    /// (a swipe left, left to right): for irreversible actions, marked
+    /// [`super::SwipeAction::destructive`]. As
+    /// [`Self::leading_swipe_actions`].
+    fn trailing_swipe_actions(
+        mut self,
+        actions: impl IntoReactive<Vec<super::SwipeAction>>,
+    ) -> Self {
+        super::swipe::bind(self.node(), crate::swipe::SwipeEdge::Trailing, actions);
+        self
+    }
+
     /// Its frame changed (relative to its parent).
     fn on_layout<M>(self, listener: impl IntoListener<Bounds<Points>, M>) -> Self {
         self.on(

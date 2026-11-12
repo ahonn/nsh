@@ -37,6 +37,8 @@ pub(crate) struct TargetIvars {
     scrolls_applied: std::cell::RefCell<rustc_hash::FxHashMap<NodeId, u32>>,
     /// The app's keyboard shortcuts, matched as keys are pressed.
     keymap: crate::keymap::KeymapState,
+    /// The view open on its swipe actions ([`crate::swipe`]).
+    swipes: crate::swipe::SwipeGroup,
 }
 
 define_class!(
@@ -385,6 +387,8 @@ define_class!(
         fn scroll_view_will_begin_dragging(&self, scroll: &UIScrollView) {
             // The scroll view takes the touches from JS responders.
             self.with_mounter(|m| m.cancel_touches());
+            // A view open on its swipe actions closes as the list scrolls.
+            self.ivars().swipes.close();
             // Caught while gliding: the glide ended.
             if scroll.isDecelerating() {
                 self.scroll_event(scroll, EventKind::MomentumEnd);
@@ -504,9 +508,15 @@ impl EventTarget {
             mounter,
             scrolls_applied: Default::default(),
             keymap: Default::default(),
+            swipes: Default::default(),
         });
         // SAFETY: NSObject's designated initializer.
         unsafe { msg_send![super(this), init] }
+    }
+
+    /// The surface's view open on its swipe actions.
+    pub(crate) fn swipes(&self) -> &crate::swipe::SwipeGroup {
+        &self.ivars().swipes
     }
 
     /// Counts a scroll the core asked for, before applying it (UIKit

@@ -48,6 +48,7 @@ mod share;
 // notification center, shared with macOS.
 use nsh_platform_apple::{audio, notifications, speech};
 mod surface;
+mod swipe;
 #[cfg(feature = "dev")]
 mod synth;
 mod system;

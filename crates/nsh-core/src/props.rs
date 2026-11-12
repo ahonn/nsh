@@ -386,6 +386,9 @@ pub struct ViewProps {
     /// Empty is none, and a disabled view (its accessibility state) shows
     /// none.
     pub context_menu: Vec<crate::desktop::MenuItem>,
+    /// Buttons a sideways swipe reveals at the view's leading or trailing
+    /// edge (`Interactive::leading_swipe_actions`; iOS shows them).
+    pub swipe_actions: crate::swipe::SwipeActions,
 }
 
 impl ViewProps {

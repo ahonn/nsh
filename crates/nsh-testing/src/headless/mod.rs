@@ -45,6 +45,7 @@ mod net;
 mod pointer;
 mod share;
 mod speech;
+mod swipe;
 mod windows;
 
 pub use audio::AudioCall;

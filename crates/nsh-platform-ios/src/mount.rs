@@ -3698,6 +3698,7 @@ impl Mounter {
     fn set_view_props(&mut self, id: NodeId, mut props: ViewProps) {
         let (control, mtm) = (self.control.clone(), self.mtm);
         let shared = self.shared.clone();
+        let target = self.target.clone();
         let Some(s) = self.slot_mut(id) else { return };
         // A disabled view shows no menu.
         let menu = match props.accessibility.state.disabled {
@@ -3740,7 +3741,10 @@ impl Mounter {
         let was_area = self.areas.iter().any(|(a, _)| *a == id);
         let Some(s) = self.slot_mut(id) else { return };
         match s.native.nsh() {
-            Some(view) => view.set_props(props, &control),
+            Some(view) => {
+                crate::swipe::sync(view, &props.swipe_actions, &target, &control);
+                view.set_props(props, &control);
+            }
             None => {
                 // Scroll views and inputs: only what UIKit offers directly.
                 use objc2_ui_kit::{NSObjectUIAccessibility, UIAccessibilityIdentification};
@@ -4678,6 +4682,12 @@ fn dynamic_transform(slot: &Slot, animator: &Animator) -> CATransform3D {
             &mat_mul(&translation(-dx, -dy, -dz), &m),
             &translation(dx, dy, dz),
         );
+    }
+    // A swipe that reveals the view's swipe actions moves it last
+    // (`swipe.rs` moves it by translating after what is set).
+    let swipe = slot.native.nsh().map_or(0.0, |v| v.swipe_offset());
+    if swipe != 0.0 {
+        m = mat_mul(&m, &translation(swipe, 0.0, 0.0));
     }
     CATransform3D {
         m11: m[0],

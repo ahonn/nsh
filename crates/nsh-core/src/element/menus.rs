@@ -13,7 +13,8 @@
 //! binding of a page's items keeps a generation so replacing the items or
 //! the page going away drops its handlers. Views' context menus
 //! ([`super::Interactive::context_menu`]) keep theirs the same way, a
-//! generation per binding of a view's items.
+//! generation per binding of a view's items, and so do views' swipe actions
+//! ([`super::swipe`]), a generation per binding of an edge's actions.
 
 use std::rc::Rc;
 
@@ -50,6 +51,11 @@ pub(crate) struct ViewMenus {
     pub(crate) context: Vec<(u64, Vec<(u32, MenuHandler)>)>,
     /// Counts context menu bindings, as `app_generation`.
     pub(crate) context_generation: u64,
+    /// Swipe action handlers: (generation, handlers), one generation per
+    /// binding of a view's leading or trailing actions.
+    pub(crate) swipe: Vec<(u64, Vec<(u32, MenuHandler)>)>,
+    /// Counts swipe action bindings, as `app_generation`.
+    pub(crate) swipe_generation: u64,
 }
 
 impl ViewMenus {
@@ -67,6 +73,7 @@ impl ViewMenus {
             .chain(&self.popup)
             .chain(self.header.iter().flat_map(|(_, handlers)| handlers))
             .chain(self.context.iter().flat_map(|(_, handlers)| handlers))
+            .chain(self.swipe.iter().flat_map(|(_, handlers)| handlers))
             .find(|(i, _)| *i == id)
             .map(|(_, h)| h.clone())
     }
@@ -111,5 +118,19 @@ impl ViewMenus {
         if let Some(slot) = self.closed.take() {
             slot.borrow_mut().deliver(());
         }
+    }
+
+    /// Keeps `handlers` for a binding of swipe actions; returns its
+    /// generation, as [`Self::push_header`].
+    pub(crate) fn push_swipe(&mut self, handlers: Vec<(u32, MenuHandler)>) -> u64 {
+        self.swipe_generation += 1;
+        let generation = self.swipe_generation;
+        self.swipe.push((generation, handlers));
+        generation
+    }
+
+    /// Drops the swipe action handlers of `generation`.
+    pub(crate) fn take_swipe(&mut self, generation: u64) {
+        self.swipe.retain(|(g, _)| *g != generation);
     }
 }

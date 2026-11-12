@@ -2204,7 +2204,8 @@ fn menu_icons_reach_the_platform_as_image_sources() {
 
 /// `Menu.setApplicationMenu` reaches the platform as items with ids and
 /// shortcuts (a role's by default), and the platform's `onMenu` calls the
-/// chosen item's function; mobile platforms get nothing.
+/// chosen item's function; iOS gets the application menu alone, Android
+/// nothing.
 #[test]
 fn menus_reach_the_platform_and_call_back() {
     use nsh_core::desktop::{DesktopCommand, Key, MenuAction, MenuItem, MenuRole, Shortcut};
@@ -2305,8 +2306,14 @@ fn menus_reach_the_platform_and_call_back() {
             .any(|b| shows(b, "copied closed"))
     );
 
-    // On a phone, nothing is sent.
-    let (_engine, rx) = start(MENU);
+    // On Android, nothing is sent.
+    let (_engine, rx) = start_in(
+        MENU,
+        Environment {
+            os: nsh_engine::Os::Android,
+            ..Environment::default()
+        },
+    );
     let batches = until(&rx, |batch| shows(batch, "none"));
     assert!(!batches.iter().flat_map(|b| &b.items).any(|i| matches!(
         i,
@@ -2315,6 +2322,44 @@ fn menus_reach_the_platform_and_call_back() {
             ..
         }
     )));
+
+    // On iOS, the application menu goes to UIKit's main menu (`mod` is
+    // Command there); context menus are a desktop's.
+    let (_engine, rx) = start_in(
+        MENU,
+        Environment {
+            os: nsh_engine::Os::Ios,
+            ..Environment::default()
+        },
+    );
+    let batches = until(&rx, |batch| shows(batch, "none closed"));
+    let commands: Vec<_> = batches
+        .iter()
+        .flat_map(|b| &b.items)
+        .filter_map(|i| match i {
+            MountItem::Command {
+                command: Command::Desktop(command),
+                ..
+            } => Some(&**command),
+            _ => None,
+        })
+        .collect();
+    let [DesktopCommand::SetMenu(Some(menu))] = commands.as_slice() else {
+        panic!("the application menu alone: {commands:?}");
+    };
+    let MenuItem::Submenu { items, .. } = &menu[0] else {
+        panic!("a submenu: {menu:?}");
+    };
+    let MenuItem::Action(new) = &items[0] else {
+        panic!("an action: {items:?}");
+    };
+    assert_eq!(
+        new.shortcut,
+        Some(Shortcut {
+            meta: true,
+            ..Shortcut::key(Key::Char('n'))
+        })
+    );
 }
 
 const QUIT: &str = r#"import { mount, Text } from "nsh";

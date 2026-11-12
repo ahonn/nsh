@@ -41,7 +41,8 @@
 //! });
 //! ```
 //!
-//! On platforms without desktop windows these have no effect.
+//! On platforms without desktop windows these have no effect, but for the
+//! application menu, which iOS shows in UIKit's main menu.
 //!
 //! [`Interactive::window_drag`]: super::Interactive::window_drag
 
@@ -1206,13 +1207,19 @@ fn desktop_os() -> bool {
 /// menu is the app menu (titled with the app's name); on Windows and Linux
 /// the window's menu bar, not shown while the title bar is hidden (its
 /// shortcuts still work: a title bar of the app's own shows its menus with
-/// [`popup_menu`]). Call it again to change it; in an [`effect`] it follows
-/// the signals it reads. The items' handlers run while the current owner
-/// lives: the menu stays after it, inert, until it is set again.
+/// [`popup_menu`]). On iOS it joins UIKit's main menu: the iPad's menu bar,
+/// the shortcuts a held Command key lists and Mac Catalyst's menu bar; its
+/// menus go into the system's standard menus of their roles or titles
+/// (`File`, `Edit`, `View`, ...) or between View and Window, and role items
+/// are left to the system's own. Call it again to change it; in an
+/// [`effect`] it follows the signals it reads. The items' handlers run
+/// while the current owner lives: the menu stays after it, inert, until it
+/// is set again.
 ///
 /// [`effect`]: super::effect
 pub fn set_application_menu(items: impl Into<Option<Vec<MenuItem>>>) {
-    if !desktop_os() {
+    let os = super::os();
+    if !os.has_application_menu() {
         return;
     }
     let menus = super::view_menus();
@@ -1227,12 +1234,19 @@ pub fn set_application_menu(items: impl Into<Option<Vec<MenuItem>>>) {
     };
     let owner = Owner::current();
     let mut handlers = Vec::new();
-    let items = desktop::MenuItem::with_inline_expanded(&decode(
+    // `mod` is Command on Apple's keyboards; iOS menus keep inline
+    // sections as they are.
+    let items = decode(
         items,
-        super::os() == Os::MacOs,
+        matches!(os, Os::MacOs | Os::Ios),
         &owner,
         &mut handlers,
-    ));
+    );
+    let items = if os.is_desktop() {
+        desktop::MenuItem::with_inline_expanded(&items)
+    } else {
+        items
+    };
     let generation = {
         let mut m = menus.borrow_mut();
         m.app_generation += 1;

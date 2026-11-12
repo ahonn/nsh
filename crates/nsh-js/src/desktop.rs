@@ -375,7 +375,8 @@ impl Decoder {
 fn decode(cx: *mut JsContext, list: JsValue) -> Result<(Arc<[MenuItem]>, Functions), JsValue> {
     let mut decoder = Decoder {
         cx,
-        mac: os(cx) == Os::MacOs,
+        // `mod` is Command on Apple's keyboards (iOS's application menu).
+        mac: matches!(os(cx), Os::MacOs | Os::Ios),
         functions: Vec::new(),
     };
     match decoder.items(list) {
@@ -426,7 +427,8 @@ unsafe extern "C" fn set_application_menu(
     argc: c_int,
     argv: *mut JsValue,
 ) -> JsValue {
-    if !os(cx).is_desktop() {
+    let os = os(cx);
+    if !os.has_application_menu() {
         return UNDEFINED;
     }
     let list = arg(argc, argv, 0);
@@ -437,7 +439,12 @@ unsafe extern "C" fn set_application_menu(
         match decode(cx, list) {
             Ok((items, functions)) => {
                 keep(cx, &menus(cx).app, functions);
-                let items = MenuItem::with_inline_expanded(&items).into();
+                // iOS menus keep inline sections as they are.
+                let items = if os.is_desktop() {
+                    MenuItem::with_inline_expanded(&items).into()
+                } else {
+                    items
+                };
                 listen(cx).and_then(|()| send(cx, DesktopCommand::SetMenu(Some(items))))
             }
             Err(e) => Err(e),
@@ -1043,7 +1050,7 @@ pub(crate) const EXPORTS: &[Item] = &[
             }
         }),
         Ts::value(
-            "True where this module's window and menu APIs work: macOS, Windows and\nLinux. `platform.desktop` (desktop behavior) also holds in browsers in the\ndesktop idiom, where the browser keeps its own window and menus.",
+            "True where this module's window and menu APIs work: macOS, Windows and\nLinux (`Menu.setApplicationMenu` also works on iOS, in UIKit's main\nmenu). `platform.desktop` (desktop behavior) also holds in browsers in the\ndesktop idiom, where the browser keeps its own window and menus.",
             "boolean",
         ),
     ),
@@ -1360,8 +1367,13 @@ export interface MenuModule {
    * with the app's name), or the window's menu bar on Windows and Linux,
    * which is not shown while the title bar is hidden (its shortcuts still
    * work: show its menus with `Menu.popup` from a title bar of the app's
-   * own). Call it again to change it (in an `effect`, it follows the
-   * signals it reads); `null` restores the platform's default menu. */
+   * own). On iOS it joins UIKit's main menu: the iPad's menu bar, the
+   * shortcuts a held Command key lists and Mac Catalyst's menu bar; its
+   * menus go into the system's standard menus of their roles or titles
+   * (`File`, `Edit`, `View`, …) or between View and Window, and role items
+   * are left to the system's own. Call it again to change it (in an
+   * `effect`, it follows the signals it reads); `null` restores the
+   * platform's default menu. */
   setApplicationMenu(items: readonly (MenuItem | null | undefined | false)[] | null): void;
   /** When the window's menu bar shows on Windows and Linux where the app's
    * window draws the application menu as a bar (the GPUI backend):

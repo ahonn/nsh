@@ -92,10 +92,19 @@ impl Os {
         matches!(self, Os::MacOs | Os::Windows | Os::Linux)
     }
 
+    /// The OS shows the application menu (`set_application_menu`, TS
+    /// `Menu.setApplicationMenu`): the desktops' menu bars, and on iOS
+    /// UIKit's main menu (the iPad's menu bar, the shortcuts a held Command
+    /// key lists, Mac Catalyst's menu bar).
+    pub fn has_application_menu(self) -> bool {
+        self.is_desktop() || self == Os::Ios
+    }
+
     /// iOS running under Mac Catalyst, in every idiom (`platform.catalyst`):
     /// this build is Catalyst's (`target_abi = "macabi"`). Catalyst runs the
     /// iOS backend, so it is mobile, not desktop: `ios={{…}}` props apply and
-    /// `nsh/desktop`'s window and menu APIs are not there.
+    /// `nsh/desktop`'s window APIs are not there (its application menu is:
+    /// [`Self::has_application_menu`]).
     pub fn is_catalyst(self) -> bool {
         self == Os::Ios && cfg!(target_abi = "macabi")
     }

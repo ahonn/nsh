@@ -20514,7 +20514,7 @@ mod rust_menus {
     fn rust_menus_do_nothing_off_desktops() {
         let mut c = core();
         c.set_environment(crate::element::Environment {
-            os: Os::Ios,
+            os: Os::Android,
             ..Default::default()
         });
         c.mount_root(&Root::of::<Menus>());
@@ -20523,6 +20523,56 @@ mod rust_menus {
             c,
             DesktopCommand::SetMenu(_) | DesktopCommand::PopupMenu { .. }
         )));
+    }
+
+    /// An application menu with an inline section.
+    #[component]
+    fn SectionMenus() -> impl IntoElement {
+        set_application_menu(vec![MenuItem::submenu(
+            "Go",
+            [
+                MenuItem::new("Back").shortcut("mod+["),
+                MenuItem::submenu("Accounts", [MenuItem::new("First").shortcut("mod+1")])
+                    .inline(true),
+            ],
+        )]);
+        view()
+    }
+
+    #[test]
+    fn ios_gets_the_application_menu_for_uikit_s_main_menu() {
+        let mut c = core();
+        c.set_environment(crate::element::Environment {
+            os: Os::Ios,
+            ..Default::default()
+        });
+        c.mount_root(&Root::of::<SectionMenus>());
+        let batch = c.commit().unwrap();
+        let menu = batch
+            .items
+            .iter()
+            .filter_map(desktop)
+            .find_map(|c| match c {
+                DesktopCommand::SetMenu(Some(items)) => Some(items.clone()),
+                _ => None,
+            })
+            .expect("the application menu");
+        let Item::Submenu { items, .. } = &menu[0] else {
+            panic!("a submenu: {menu:?}");
+        };
+        // `mod` is Command on an iPad's keyboard.
+        let Item::Action(back) = &items[0] else {
+            panic!("an action: {items:?}");
+        };
+        assert_eq!(
+            back.shortcut,
+            Some(crate::desktop::Shortcut::parse("cmd+[", false).unwrap())
+        );
+        // UIKit's menus show inline sections as they are.
+        assert!(
+            matches!(&items[1], Item::Submenu { label, inline: true, .. } if label == "Accounts"),
+            "{items:?}"
+        );
     }
 }
 

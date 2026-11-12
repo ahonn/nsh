@@ -34,6 +34,7 @@ mod image;
 mod input;
 mod interaction;
 mod keymap;
+mod main_menu;
 mod menu;
 mod mount;
 mod native_view;

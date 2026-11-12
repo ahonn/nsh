@@ -282,6 +282,23 @@ Things that were found the hard way. Read the section of the area you change bef
   reads the element's value as soon as the call returns, while the new value comes from the engine thread in a later
   batch: a step whose value arrives after VoiceOver read the old one announces the new one (`NshView::late_step_value`),
   one that arrives before it asked is read by VoiceOver itself.
+- **A split view's columns are the split view controller's, not the core's** (`split.rs`): a nav stack given to a
+  `UISplitViewController` column must leave its container and the surface's controller first (`StackHost::make_column`)
+  (UIKit's containment gives a controller one parent, and the split view controller places the column's view). UIKit sizes the
+  columns, so each column's navigation controller reports its view's size (`Core::set_stack_size`) and the core lays
+  its pages out at that size, not at the row it laid the stacks out in. The split view's props come ahead of its
+  children's insertion (the core moves them after its `Create`), so the mounter can keep the columns out of the
+  container's subviews.
+- **iPadOS 26's floating sidebar covers the column beside it**: the list column starts at the window's leading edge
+  under the sidebar's glass, and only its safe area says where the uncovered part starts. NSH lays a page's content out
+  over the whole page, so a column's pages keep to their safe area themselves (`px_safe_area()`,
+  `env(safe-area-inset-left)`); the system bars do it on their own. The sidebar's own pages are clear (`NavController::paint_screens`): a
+  screen's usual system background would cover the sidebar material.
+- **A collapsed split view moved its columns' pages onto one stack**: in a compact width (Slide Over, a narrow window)
+  UIKit pushes the supplementary and secondary columns' controllers onto the primary column's navigation controller.
+  Setting a column stack's `viewControllers` then would take them back from under UIKit, so the mounter defers a
+  column's changes while its split view `isCollapsed` and applies them on `splitViewControllerDidExpand:`. Apps show
+  another layout in a compact width (`horizontal_size_class()`).
 
 ## Android
 

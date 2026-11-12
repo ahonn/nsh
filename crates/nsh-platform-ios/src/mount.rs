@@ -610,6 +610,11 @@ pub(crate) struct Mounter {
     hosts: rustc_hash::FxHashMap<NodeId, NodeId>,
     /// Stacks whose screens changed in the current batch.
     dirty_stacks: Vec<NodeId>,
+    /// Split views (`split.rs`), by their view: its children are their
+    /// columns, hosted like screens (in [`Mounter::hosts`]).
+    splits: rustc_hash::FxHashMap<NodeId, crate::split::SplitHost>,
+    /// Split views whose options or columns changed in the current batch.
+    dirty_splits: Vec<NodeId>,
     /// A retained tab changed visibility; sync the newly visible stack.
     bottom_bar_dirty: bool,
     /// Stacks whose screens changed during a push or pop transition: they
@@ -730,6 +735,8 @@ impl Mounter {
             alert_tint: None,
             hosts: Default::default(),
             dirty_stacks: Vec::new(),
+            splits: Default::default(),
+            dirty_splits: Vec::new(),
             bottom_bar_dirty: false,
             deferred_stacks: Vec::new(),
             dirty_headers: Vec::new(),
@@ -1087,6 +1094,7 @@ impl Mounter {
             }
             MountItem::Delete { id } => {
                 self.remove_hosted(id);
+                self.remove_split(id);
                 self.sticky.remove(&id);
                 // A removal animation it was running ends with it: its end
                 // must not find the id, which a new view may take.
@@ -1642,6 +1650,12 @@ impl Mounter {
     }
 
     fn command(&mut self, id: NodeId, command: Command) {
+        if let Command::ShowSplitColumn { column, shown } = command {
+            if let Some(split) = self.splits.get(&id) {
+                split.show_column(column, shown);
+            }
+            return;
+        }
         if let Command::Native { name, args } = &command {
             if let Some(Slot {
                 native: Native::Component(host),
@@ -3216,6 +3230,12 @@ impl Mounter {
     /// records them for [`Mounter::finish_navigation`]. Returns true if
     /// `child` is one of them.
     fn insert_hosted(&mut self, parent: NodeId, child: NodeId, before: Option<NodeId>) -> bool {
+        // A split view's columns: their stacks go to its controller.
+        if self.splits.contains_key(&parent) {
+            self.hosts.insert(child, parent);
+            self.dirty_splits.push(parent);
+            return true;
+        }
         let Some(c) = self.slot(child) else {
             return false;
         };
@@ -3249,6 +3269,10 @@ impl Mounter {
         let Some(parent) = self.hosts.remove(&id) else {
             return false;
         };
+        if self.splits.contains_key(&parent) {
+            self.dirty_splits.push(parent);
+            return true;
+        }
         match self.slot(id).map(|s| &s.native) {
             Some(Native::Screen(screen)) => {
                 let animation = screen.config.animation;
@@ -3355,6 +3379,7 @@ impl Mounter {
     /// and are laid out: pushes and pops screens, updates headers, presents
     /// and dismisses modals.
     fn finish_navigation(&mut self) {
+        self.finish_splits();
         let mut stacks = std::mem::take(&mut self.dirty_stacks);
         stacks.sort_unstable();
         stacks.dedup();
@@ -3366,6 +3391,20 @@ impl Mounter {
             else {
                 continue;
             };
+            // A collapsed split view moved its columns' pages onto one
+            // stack: the column's changes wait until it expands
+            // ([`Mounter::split_expanded`]).
+            if stack.column
+                && stack
+                    .nav
+                    .splitViewController()
+                    .is_some_and(|split| split.isCollapsed())
+            {
+                if !self.deferred_stacks.contains(&id) {
+                    self.deferred_stacks.push(id);
+                }
+                continue;
+            }
             if let Some(coordinator) = stack.nav.transitionCoordinator() {
                 if !self.deferred_stacks.contains(&id) {
                     self.deferred_stacks.push(id);
@@ -3564,6 +3603,155 @@ impl Mounter {
         }
     }
 
+    /// View `id` is a split view with `config`: made (again, when it gains
+    /// or loses its supplementary column, a style UIKit fixes) and
+    /// configured; its columns follow at the end of the batch.
+    fn configure_split(&mut self, id: NodeId, config: nsh_core::split::SplitConfig) {
+        let triple = config.triple();
+        if self
+            .splits
+            .get(&id)
+            .is_some_and(|split| split.triple != triple)
+        {
+            self.remove_split(id);
+        }
+        if !self.splits.contains_key(&id) {
+            let Some(container) = self.slot(id).map(|s| s.native.view().retain()) else {
+                return;
+            };
+            let split = crate::split::SplitHost::new(
+                self.mtm,
+                id,
+                &container,
+                triple,
+                self.control.clone(),
+                self.shared.clone(),
+            );
+            self.splits.insert(id, split);
+        }
+        if let Some(split) = self.splits.get_mut(&id) {
+            split.configure(config);
+        }
+        self.dirty_splits.push(id);
+    }
+
+    /// View `id` is no split view (any more): its controller leaves, and
+    /// the stacks it had as columns are the core's to place again.
+    fn remove_split(&mut self, id: NodeId) {
+        let Some(mut split) = self.splits.remove(&id) else {
+            return;
+        };
+        split.remove();
+        for stack in split.assigned.into_iter().flatten() {
+            if let Some(Slot {
+                native: Native::Stack(stack),
+                ..
+            }) = self.views.get_mut(stack as usize).and_then(Option::as_mut)
+            {
+                stack.release_column();
+            }
+        }
+    }
+
+    /// Gives the split views whose options or columns changed their
+    /// columns' stacks, and puts the split views shown since in their
+    /// controller.
+    fn finish_splits(&mut self) {
+        use nsh_core::split::SplitColumn;
+        let mut ids = std::mem::take(&mut self.dirty_splits);
+        ids.sort_unstable();
+        ids.dedup();
+        for id in ids {
+            let Some(split) = self.splits.get_mut(&id) else {
+                continue;
+            };
+            let columns: &[SplitColumn] = if split.triple {
+                &[
+                    SplitColumn::Primary,
+                    SplitColumn::Supplementary,
+                    SplitColumn::Secondary,
+                ]
+            } else {
+                &[SplitColumn::Primary, SplitColumn::Secondary]
+            };
+            let mut wanted = [None; 3];
+            for &column in columns {
+                wanted[crate::split::index(column)] =
+                    split.config.column(column).filter(|&stack| {
+                        matches!(
+                            self.views.get(stack as usize).and_then(Option::as_ref),
+                            Some(Slot {
+                                native: Native::Stack(_),
+                                ..
+                            })
+                        )
+                    });
+            }
+            let old = split.assigned;
+            for &column in columns {
+                let at = crate::split::index(column);
+                if wanted[at] == old[at] {
+                    continue;
+                }
+                let nav = wanted[at].and_then(|stack| {
+                    match self.views.get_mut(stack as usize).and_then(Option::as_mut) {
+                        Some(Slot {
+                            native: Native::Stack(stack),
+                            ..
+                        }) => {
+                            stack.make_column(self.control.clone(), column == SplitColumn::Primary);
+                            Some(Retained::into_super(Retained::into_super(
+                                stack.nav.clone(),
+                            )))
+                        }
+                        _ => None,
+                    }
+                });
+                split.set_column(column, nav.as_deref());
+            }
+            split.assigned = wanted;
+            for stack in old.into_iter().flatten() {
+                if wanted.contains(&Some(stack)) {
+                    continue;
+                }
+                if let Some(Slot {
+                    native: Native::Stack(stack),
+                    ..
+                }) = self.views.get_mut(stack as usize).and_then(Option::as_mut)
+                {
+                    stack.release_column();
+                }
+            }
+        }
+        for (&id, split) in self.splits.iter_mut() {
+            if let Some(slot) = self.views.get(id as usize).and_then(Option::as_ref) {
+                split.contain(slot.native.view());
+            }
+        }
+    }
+
+    /// Split view `id` expanded again: the changes its columns' stacks
+    /// waited with while it was collapsed apply, on the next main-queue
+    /// turn.
+    pub(crate) fn split_expanded(shared: &SharedMounter, id: NodeId) {
+        let shared = shared.clone();
+        DispatchQueue::main().exec_async(move || {
+            let mtm = MainThreadMarker::new().expect("main queue");
+            if let Some(m) = shared.get(mtm).borrow_mut().as_mut()
+                && let Some(split) = m.splits.get(&id)
+            {
+                let columns = split.assigned;
+                for stack in columns.into_iter().flatten() {
+                    if let Some(i) = m.deferred_stacks.iter().position(|&s| s == stack) {
+                        m.deferred_stacks.swap_remove(i);
+                        m.dirty_stacks.push(stack);
+                    }
+                }
+                m.finish_navigation();
+            }
+        });
+    }
+
     /// Applies the changes stack `id` deferred during a transition, on the
     /// next main-queue turn (the transition coordinator outlives the
     /// callbacks that end it), unless another callback already did.
@@ -3696,6 +3884,10 @@ impl Mounter {
 
     /// Touch, accessibility and test properties.
     fn set_view_props(&mut self, id: NodeId, mut props: ViewProps) {
+        match props.split.take() {
+            Some(config) => self.configure_split(id, config),
+            None => self.remove_split(id),
+        }
         let (control, mtm) = (self.control.clone(), self.mtm);
         let shared = self.shared.clone();
         let target = self.target.clone();

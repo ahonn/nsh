@@ -405,6 +405,15 @@ pub(crate) struct NavIvars {
     mounter: SharedMounter,
     /// The app's own change of screens is being applied.
     applying: Cell<bool>,
+    /// While the stack is a split view's column (`split.rs`), where its
+    /// size goes: UIKit sizes the column, and its screens are laid out at
+    /// that size (`Core::set_stack_size`).
+    column: RefCell<Option<EngineControl>>,
+    /// The size last reported as a column.
+    reported: Cell<Option<CGSize>>,
+    /// The stack is a split view's primary column: UIKit draws the
+    /// sidebar's background, which its screens leave clear.
+    sidebar: Cell<bool>,
 }
 
 /// A drag that starts at the screen's edge belongs to the stack: the top
@@ -566,6 +575,8 @@ define_class!(
             let _: () = unsafe { msg_send![super(self), viewDidLayoutSubviews] };
             size_screens(self);
             clip_side_safe_area(self);
+            self.report_column_size();
+            self.paint_screens();
         }
 
         /// A side bar arriving, leaving or changing side moves no view of
@@ -585,11 +596,76 @@ impl NavController {
             stack,
             mounter,
             applying: Cell::new(false),
+            column: RefCell::new(None),
+            reported: Cell::new(None),
+            sidebar: Cell::new(false),
         });
         // SAFETY: UIViewController's designated initializer.
         unsafe {
             msg_send![super(this), initWithNibName: Option::<&NSString>::None, bundle: Option::<&NSObject>::None]
         }
+    }
+}
+
+impl NavController {
+    /// Makes the stack a split view's column (`Some`: its sizes go to
+    /// `control`), or a stack the core places again (`None`: the core's
+    /// layout sizes its screens).
+    fn set_column(&self, control: Option<EngineControl>, sidebar: bool) {
+        let ivars = self.ivars();
+        let was_sidebar = ivars.sidebar.replace(sidebar);
+        let was = ivars.column.replace(control);
+        ivars.reported.set(None);
+        if ivars.column.borrow().is_none()
+            && let Some(control) = was
+        {
+            control.set_stack_size(ivars.stack, None);
+        }
+        self.report_column_size();
+        if was_sidebar && !sidebar {
+            for controller in self.viewControllers().iter() {
+                if let Some(view) = controller.viewIfLoaded() {
+                    view.setBackgroundColor(Some(&UIColor::systemBackgroundColor()));
+                }
+            }
+        }
+        self.paint_screens();
+    }
+
+    /// The screens of a sidebar leave its background to UIKit (a screen's
+    /// view is the system background elsewhere, `ScreenHost::new`).
+    fn paint_screens(&self) {
+        if !self.ivars().sidebar.get() {
+            return;
+        }
+        for controller in self.viewControllers().iter() {
+            if let Some(view) = controller.viewIfLoaded()
+                && view.backgroundColor().is_some()
+            {
+                view.setBackgroundColor(None);
+            }
+        }
+    }
+
+    /// A column reports the size UIKit gave it, once it has one.
+    fn report_column_size(&self) {
+        let ivars = self.ivars();
+        let column = ivars.column.borrow();
+        let (Some(control), Some(view)) = (column.as_ref(), self.viewIfLoaded()) else {
+            return;
+        };
+        let size = view.bounds().size;
+        if size.width <= 0.0 || size.height <= 0.0 || ivars.reported.get() == Some(size) {
+            return;
+        }
+        ivars.reported.set(Some(size));
+        control.set_stack_size(
+            ivars.stack,
+            Some(Size::new(
+                Points(size.width as f32),
+                Points(size.height as f32),
+            )),
+        );
     }
 }
 
@@ -1094,6 +1170,9 @@ pub(crate) struct StackHost {
     pub(crate) applied: std::cell::RefCell<Vec<NodeId>>,
     /// The controller is a child of the surface's controller.
     contained: bool,
+    /// The navigation controller is a split view's column: the split view
+    /// controller holds it, not the container (`split.rs`).
+    pub(crate) column: bool,
 }
 
 impl StackHost {
@@ -1131,13 +1210,14 @@ impl StackHost {
             popped: Vec::new(),
             applied: Default::default(),
             contained: false,
+            column: false,
         }
     }
 
     /// Makes the navigation controller a child of the controller showing
     /// the stack (appearance callbacks, safe areas, rotation).
     pub(crate) fn contain(&mut self) {
-        if self.contained || self.container.window().is_none() {
+        if self.contained || self.column || self.container.window().is_none() {
             return;
         }
         let Some(parent) = controller_of(&self.container) else {
@@ -1146,6 +1226,42 @@ impl StackHost {
         parent.addChildViewController(&self.nav);
         self.nav.didMoveToParentViewController(Some(&parent));
         self.contained = true;
+    }
+
+    /// Hands the navigation controller to a split view as a column
+    /// (`control`: where its sizes go): out of the container and of the
+    /// controller it was a child of.
+    /// `sidebar`: it is the primary column, whose background UIKit draws.
+    pub(crate) fn make_column(&mut self, control: EngineControl, sidebar: bool) {
+        if self.column {
+            return;
+        }
+        if self.contained {
+            self.nav.willMoveToParentViewController(None);
+            self.nav.removeFromParentViewController();
+            self.contained = false;
+        }
+        if let Some(view) = self.nav.viewIfLoaded() {
+            view.removeFromSuperview();
+        }
+        self.column = true;
+        self.nav.set_column(Some(control), sidebar);
+    }
+
+    /// Takes the navigation controller back from the split view that had
+    /// it as a column (it has already left the split view controller): into
+    /// the container again, contained on the next change of the stack.
+    pub(crate) fn release_column(&mut self) {
+        if !self.column {
+            return;
+        }
+        self.column = false;
+        self.nav.set_column(None, false);
+        if let Some(view) = self.nav.view() {
+            view.removeFromSuperview();
+            view.setFrame(self.container.bounds());
+            self.container.addSubview(&view);
+        }
     }
 
     /// Shows the app's screens: pushes, pops or replaces as needed.
@@ -1225,6 +1341,7 @@ impl StackHost {
         // appearance) forces a layout pass.
         size_screens(&self.nav);
         defer_to_back_swipe(&self.nav);
+        self.nav.paint_screens();
     }
 
     /// Puts the bar where this stack says it goes, if it is the stack on

@@ -266,7 +266,6 @@ pub(crate) fn input_ended(view: &UIView, presses: &AnyObject) -> bool {
 /// another view taking text (a web view's, a native component's) is in
 /// text.
 pub(crate) fn root_began(target: &EventTarget, presses: &AnyObject) -> bool {
-    use objc2::ProtocolType;
     // SAFETY: as in `keys`; `responder` is UIPress's.
     let responder: Option<Retained<AnyObject>> = unsafe {
         let all: Retained<NSArray<AnyObject>> = msg_send![presses, allObjects];
@@ -281,15 +280,24 @@ pub(crate) fn root_began(target: &EventTarget, presses: &AnyObject) -> bool {
         {
             return false;
         }
-        Some(r) => {
-            let text = <dyn objc2_ui_kit::UIKeyInput>::protocol()
-                .is_some_and(|p| r.class().conforms_to(p));
-            // The app's own texts take keys only to select (`TextView`).
-            text && r.downcast_ref::<crate::native_view::NshView>().is_none()
-                && r.downcast_ref::<crate::selectable_view::AreaResponder>()
-                    .is_none()
-        }
+        Some(r) => takes_text(r),
         None => false,
     };
     began(target, presses, editing)
+}
+
+/// Whether responder `r` takes typed text: the app's text inputs, a web
+/// view's or a native component's text; not the app's own texts, which take
+/// keys only to select (`TextView`).
+pub(crate) fn takes_text(r: &AnyObject) -> bool {
+    use objc2::ProtocolType;
+    if r.downcast_ref::<crate::input::Field>().is_some()
+        || r.downcast_ref::<crate::input::Area>().is_some()
+    {
+        return true;
+    }
+    let text = <dyn objc2_ui_kit::UIKeyInput>::protocol().is_some_and(|p| r.class().conforms_to(p));
+    text && r.downcast_ref::<crate::native_view::NshView>().is_none()
+        && r.downcast_ref::<crate::selectable_view::AreaResponder>()
+            .is_none()
 }

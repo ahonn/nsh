@@ -282,6 +282,24 @@ Things that were found the hard way. Read the section of the area you change bef
   reads the element's value as soon as the call returns, while the new value comes from the engine thread in a later
   batch: a step whose value arrives after VoiceOver read the old one announces the new one (`NshView::late_step_value`),
   one that arrives before it asked is read by VoiceOver itself.
+- **The application menu is UIKit's main menu** (`main_menu.rs`; the iPad's menu bar from iPadOS 26, the list a held
+  Command key shows from iPadOS 15, Mac Catalyst's menu bar). The standalone app's delegate builds it
+  (`buildMenuWithBuilder:`) on top of UIKit's own menus, which stay; `SetMenu` keeps the items and calls
+  `UIMenuSystem.mainSystem.setNeedsRebuild`. A top-level submenu goes into the standard menu of its first role item
+  (About / Hide / Quit: the application menu, after About; Close: File; the editing roles: Edit; Minimize / Zoom /
+  Full Screen: Window) or of its label (`File`, `Edit`, `Format`, `View`, `Window`, `Help`, or UIKit's localized
+  title), as an inline section at the end; any other becomes a menu of its own between View and Window. Role items are
+  left out (the system's menus have their own). Actions are `UIKeyCommand`s (with a shortcut) or `UICommand`s, whose
+  `propertyList` is the build's generation and the command's index; the delegate (last in the responder chain)
+  validates them (`canPerformAction:withSender:`: enabled, and `MenuAction::fires_while_editing` while the key
+  window's first responder takes text) and reports the chosen item as the root's `Menu` event. Verified on iPadOS 27:
+  **a menu inserted with a shortcut the main menu has already is dropped whole** (UIKit logs "Inserted elements
+  conflict with existing elements", e.g. Command-E against Use Selection for Find, Command-, against Settings), so the
+  app's shortcuts first remove UIKit's commands of the same input (compared case-insensitively) and modifiers, and a
+  repeated shortcut of the app's own is left off the later item; **presses reach the responders' `pressesBegan:`
+  before UIKit matches the main menu's key commands**, so an `nsh/keymap` binding of a keystroke fires and the menu's
+  item of it does not, as on the desktops (headless runs, `keyboard.press`, follow the same order). An app embedding
+  `AppView` owns the app delegate: its main menu does not get NSH's menu.
 
 ## Android
 

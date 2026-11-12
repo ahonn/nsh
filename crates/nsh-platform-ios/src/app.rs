@@ -120,6 +120,37 @@ define_class!(
             config
         }
     }
+
+    // The app's menu in UIKit's main menu (`crate::main_menu`): the
+    // delegate builds it and, last in the responder chain, carries out its
+    // commands wherever the focus is.
+    impl AppDelegate {
+        #[unsafe(method(buildMenuWithBuilder:))]
+        fn build_menu(
+            &self,
+            builder: &objc2::runtime::ProtocolObject<dyn objc2_ui_kit::UIMenuBuilder>,
+        ) {
+            crate::main_menu::build(self.mtm(), builder);
+        }
+
+        #[unsafe(method(canPerformAction:withSender:))]
+        fn can_perform_action(
+            &self,
+            action: objc2::runtime::Sel,
+            sender: Option<&AnyObject>,
+        ) -> objc2::runtime::Bool {
+            if action == crate::main_menu::action() {
+                return crate::main_menu::can_choose(self.mtm(), sender).into();
+            }
+            // SAFETY: UIResponder's method, with the arguments UIKit gave.
+            unsafe { msg_send![super(self), canPerformAction: action, withSender: sender] }
+        }
+
+        #[unsafe(method(nshMainMenuCommand:))]
+        fn main_menu_command(&self, sender: Option<&AnyObject>) {
+            crate::main_menu::choose(sender);
+        }
+    }
 );
 
 define_class!(

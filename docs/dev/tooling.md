@@ -346,7 +346,7 @@ report it:
 - `press_key` (`headless/keyboard.rs`, `app.keyboard.press`): the keystroke as `nsh`'s `keymap` parses it for the
   environment's OS; on every environment (a hardware keyboard: phones and tablets have one too) the root's keymap
   (`MountItem::Keymap`, `Screen::keymap`) finds the binding that fires where the focus is (`Keymap::find`) and the
-  root hears `KeyCommand`; then, on a desktop, the application menu (`DesktopCommand::SetMenu`, `Screen::app_menu`)
+  root hears `KeyCommand`; then, on a desktop and on iOS, the application menu (`DesktopCommand::SetMenu`, `Screen::app_menu`)
   chooses its item with that shortcut (`MenuItem::find_shortcut`, keeping `MenuAction::fires_while_editing` while an
   input has the focus) and the root hears `Menu`, as the platforms' menus do after the keymap; else, on macOS and the
   web, Tab / Shift+Tab move the keyboard focus between the stops

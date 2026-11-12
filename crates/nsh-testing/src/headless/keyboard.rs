@@ -3,8 +3,8 @@
 //! phones and tablets have one too, a tablet's keyboard, a Chromebook's).
 //! The app's shortcuts (`nsh/keymap`) take it first, as the platforms'
 //! keymaps do: the newest binding of the keystroke that fires where the
-//! focus is reports `onKeyCommand`. Then, on a desktop, the application
-//! menu's item with that shortcut is chosen (`onMenu`). Else Tab moves the
+//! focus is reports `onKeyCommand`. Then, on a desktop and on iOS, the
+//! application menu's item with that shortcut is chosen (`onMenu`). Else Tab moves the
 //! keyboard focus between the inputs and the views that are its stops
 //! (those that take presses, and `focusable` ones that take none) where the
 //! platform does (macOS, the web), Return and Space press the pressable it
@@ -54,8 +54,8 @@ impl Headless {
     /// `nsh/keymap` names it (`"mod+k"`, `"shift+tab"`, `"escape"`; `mod` is
     /// the app's platform's command key). A binding of the app's keymap
     /// that fires where the focus is hears it (`onKeyCommand`), and takes
-    /// the key unless it passes it through; then, on a desktop, the
-    /// application menu's item with that shortcut is chosen; else the
+    /// the key unless it passes it through; then, on a desktop and on iOS,
+    /// the application menu's item with that shortcut is chosen; else the
     /// focused input takes a character, Backspace or the return key, and
     /// Escape goes back as the desktops' back key does when there is
     /// something to go back from.
@@ -83,10 +83,11 @@ impl Headless {
         }
         let m = stroke.modifiers;
         // Then the application menu's shortcuts choose its items, on a
-        // desktop, as the platforms' menus do after the keymap; an item that
-        // leaves the key to the focused field does not take it.
+        // desktop and on iOS (UIKit's main menu), as the platforms' menus do
+        // after the keymap; an item that leaves the key to the focused field
+        // does not take it.
         let apple = matches!(self.environment.os, Os::MacOs | Os::Ios);
-        if self.environment.desktop()
+        if (self.environment.desktop() || self.environment.os.has_application_menu())
             && let Ok(pressed) = Shortcut::parse(keys, apple)
             && let Some((id, fires)) = self.screen.app_menu().and_then(|items| {
                 MenuItem::find_shortcut(items, &pressed)

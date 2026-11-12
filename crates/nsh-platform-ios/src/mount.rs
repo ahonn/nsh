@@ -1805,6 +1805,12 @@ impl Mounter {
             (Command::AccessibilityFocus, native) => {
                 crate::system::accessibility_focus(native.view())
             }
+            (Command::Desktop(desktop), native) if id == nsh_core::ROOT_ID => match *desktop {
+                nsh_core::desktop::DesktopCommand::SetMenu(items) => {
+                    crate::main_menu::set(native.view().mtm(), items, &self.control);
+                }
+                other => log::warn!("{other:?} does not apply on iOS"),
+            },
             (command, _) => log::warn!("{command:?} does not apply to view {id}"),
         }
     }

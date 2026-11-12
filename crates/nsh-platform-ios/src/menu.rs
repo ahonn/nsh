@@ -1,6 +1,7 @@
 //! `UIMenu`s of [`MenuItem`]s: the menus of trailing header bar buttons
 //! ([`crate::navigation`]) and views' context menus
-//! ([`crate::context_menu`]).
+//! ([`crate::context_menu`]); the main menu ([`crate::main_menu`]) builds its
+//! sections with the same [`menu_children`], its actions commands.
 //!
 //! An action with a handler carries the id the core gave it; choosing it
 //! hands the id to the menu's [`Select`], which reports it as the root's
@@ -34,9 +35,15 @@ pub(crate) fn make_menu(
     items: &[MenuItem],
     select: &Select,
 ) -> Retained<UIMenu> {
-    let children = menu_children(mtm, items, select, true);
+    let mut leaf =
+        |action: &MenuAction| Retained::into_super(make_menu_action(mtm, action, select));
+    let children = menu_children(mtm, items, &mut leaf, true);
     UIMenu::menuWithTitle_children(&NSString::from_str(""), &children, mtm)
 }
+
+/// Makes the element of an action, as it shows (`enabled` already folds in
+/// the submenus around it).
+pub(crate) type Leaf<'a> = dyn FnMut(&MenuAction) -> Retained<UIMenuElement> + 'a;
 
 /// A `UIAction` for a [`MenuAction`].
 fn make_menu_action(
@@ -87,18 +94,16 @@ fn make_menu_action(
 fn menu_element(
     mtm: MainThreadMarker,
     entry: &MenuItem,
-    select: &Select,
+    leaf: &mut Leaf<'_>,
     enabled: bool,
 ) -> Option<Retained<UIMenuElement>> {
     match entry {
         MenuItem::Separator => None,
-        MenuItem::Action(action) => {
-            let mut action = action.clone();
-            if !enabled {
-                action.enabled = false;
-            }
-            Some(Retained::into_super(make_menu_action(mtm, &action, select)))
-        }
+        MenuItem::Action(action) if !enabled && action.enabled => Some(leaf(&MenuAction {
+            enabled: false,
+            ..action.clone()
+        })),
+        MenuItem::Action(action) => Some(leaf(action)),
         MenuItem::Submenu {
             label,
             enabled: submenu_enabled,
@@ -108,7 +113,7 @@ fn menu_element(
             inline,
         } => {
             let child_enabled = enabled && *submenu_enabled;
-            let nested = menu_children(mtm, items, select, child_enabled);
+            let nested = menu_children(mtm, items, leaf, child_enabled);
             let image = symbol.as_deref().and_then(system_image);
             let options = if *inline {
                 UIMenuOptions::DisplayInline
@@ -131,18 +136,20 @@ fn menu_element(
 /// Menu children for a list of [`MenuItem`]s. Separators split the list into
 /// consecutive inline `UIMenu` groups (UIKit draws separators between those);
 /// with no separators the elements stay flat. A disabled submenu has no
-/// enabled state of its own, so its children are disabled instead.
-fn menu_children(
+/// enabled state of its own, so its children are disabled instead. `leaf`
+/// makes the actions' elements: `UIAction`s for the menus of buttons and
+/// views, commands for the main menu ([`crate::main_menu`]).
+pub(crate) fn menu_children(
     mtm: MainThreadMarker,
     entries: &[MenuItem],
-    select: &Select,
+    leaf: &mut Leaf<'_>,
     enabled: bool,
 ) -> Retained<NSArray<UIMenuElement>> {
     let has_separator = entries.iter().any(|e| matches!(e, MenuItem::Separator));
     if !has_separator {
         let children: Vec<_> = entries
             .iter()
-            .filter_map(|entry| menu_element(mtm, entry, select, enabled))
+            .filter_map(|entry| menu_element(mtm, entry, leaf, enabled))
             .collect();
         return NSArray::from_retained_slice(&children);
     }
@@ -169,7 +176,7 @@ fn menu_children(
         match entry {
             MenuItem::Separator => flush(&mut group, &mut children),
             other => {
-                if let Some(el) = menu_element(mtm, other, select, enabled) {
+                if let Some(el) = menu_element(mtm, other, leaf, enabled) {
                     group.push(el);
                 }
             }

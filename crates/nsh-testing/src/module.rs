@@ -1726,7 +1726,7 @@ impl Keyboard {
     /// Presses `keys`, a keystroke as `nsh/keymap` names it (`"mod+k"`,
     /// `"shift+/"`, `"escape"`; `mod` is the platform's command key): the
     /// app's shortcut of it hears it (`onKeyCommand`), else on a desktop
-    /// the application menu's item with that shortcut is chosen, else the
+    /// and on iOS the application menu's item with that shortcut is chosen, else the
     /// focused input takes it, else Escape goes back.
     pub async fn press(this: Instance<Self>, keys: String) -> Result<(), JsError> {
         let steps = this.with(|k| k.steps.clone());

@@ -339,12 +339,14 @@ impl RootView {
         let insets = self.safeAreaInsets();
         let (keyboard_height, keyboard_duration) = self.ivars().keyboard.get();
         // SAFETY: plain getters.
-        let (style, body, scale) = unsafe {
+        let (style, body, scale, horizontal, vertical) = unsafe {
             let traits = self.traitCollection();
             (
                 traits.userInterfaceStyle(),
                 UIFont::preferredFontForTextStyle(UIFontTextStyleBody).pointSize(),
                 traits.displayScale(),
+                size_class(traits.horizontalSizeClass()),
+                size_class(traits.verticalSizeClass()),
             )
         };
         let mut env = Environment {
@@ -396,6 +398,10 @@ impl RootView {
             audio: true,
             // `UIActivityViewController` (`share.rs`), Catalyst included.
             share: true,
+            // The view's traits follow its window's: Slide Over and a narrow
+            // Split View are compact (`traitCollectionDidChange:`).
+            horizontal_size_class: horizontal,
+            vertical_size_class: vertical,
             // No file dialogs, file manager or trash (Catalyst included):
             // the default, so the core answers those requests.
             ..Environment::default()
@@ -1227,4 +1233,14 @@ fn os_version(mtm: MainThreadMarker) -> (u16, u16) {
         let mut parts = version.split('.').map(|p| p.parse().unwrap_or(0));
         (parts.next().unwrap_or(0), parts.next().unwrap_or(0))
     })
+}
+
+/// UIKit's size class as the core's.
+fn size_class(class: objc2_ui_kit::UIUserInterfaceSizeClass) -> nsh_core::platform::SizeClass {
+    use nsh_core::platform::SizeClass;
+    match class {
+        objc2_ui_kit::UIUserInterfaceSizeClass::Compact => SizeClass::Compact,
+        objc2_ui_kit::UIUserInterfaceSizeClass::Regular => SizeClass::Regular,
+        _ => SizeClass::Unspecified,
+    }
 }

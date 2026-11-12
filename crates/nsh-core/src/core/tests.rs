@@ -33706,3 +33706,58 @@ fn symbol_images_are_contained_by_default_and_pass_unchanged() {
         Some(ResizeMode::Cover)
     );
 }
+
+
+/// Size classes (`horizontal_size_class`, `vertical_size_class`): the
+/// platform's, else derived from the desktop idiom and the window.
+mod size_classes {
+    use super::*;
+    use crate::{platform::Os, prelude::*};
+
+    #[test]
+    fn size_classes_are_the_platforms_or_derived_from_the_window() {
+        use crate::platform::{Idiom, SizeClass};
+        let mut c = core();
+        let read = |c: &mut Core<FakeEngine>, env: crate::element::Environment| {
+            c.set_environment(env);
+            let _entered = c.components.runtime.enter();
+            (horizontal_size_class(), vertical_size_class())
+        };
+        let phone = crate::element::Environment {
+            os: Os::Ios,
+            window: size_pt(390.0, 844.0),
+            ..Default::default()
+        };
+        assert_eq!(
+            read(&mut c, phone),
+            (SizeClass::Compact, SizeClass::Regular)
+        );
+        let reported = crate::element::Environment {
+            horizontal_size_class: SizeClass::Regular,
+            vertical_size_class: SizeClass::Compact,
+            ..phone
+        };
+        assert_eq!(
+            read(&mut c, reported),
+            (SizeClass::Regular, SizeClass::Compact)
+        );
+        let desktop = crate::element::Environment {
+            os: Os::Web,
+            idiom: Idiom::Desktop,
+            window: size_pt(390.0, 300.0),
+            ..Default::default()
+        };
+        assert_eq!(
+            read(&mut c, desktop),
+            (SizeClass::Regular, SizeClass::Regular)
+        );
+        let no_size = crate::element::Environment {
+            os: Os::Android,
+            ..Default::default()
+        };
+        assert_eq!(
+            read(&mut c, no_size),
+            (SizeClass::Unspecified, SizeClass::Unspecified)
+        );
+    }
+}

@@ -3337,6 +3337,8 @@ fn ui_environment(env: &Environment, window: Size<Points>) -> nsh_core::element:
         cell: env.cell,
         web_input: env.web_input,
         share: env.share,
+        horizontal_size_class: env.horizontal_size_class,
+        vertical_size_class: env.vertical_size_class,
     }
 }
 

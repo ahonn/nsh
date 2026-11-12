@@ -113,6 +113,57 @@ impl Default for Os {
     }
 }
 
+/// How much room one axis of the surface has, in UIKit's coarse terms
+/// (`UIUserInterfaceSizeClass`): what an app switches between layouts by
+/// (an iPad's sidebar and columns where the width is regular, a phone's
+/// tabs where it is compact) rather than by points
+/// ([`crate::element::horizontal_size_class`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SizeClass {
+    /// Not known: the platform reports none and the surface has no size
+    /// yet.
+    #[default]
+    Unspecified,
+    /// Little room: an iPhone's width, an iPad's in Slide Over or a narrow
+    /// Split View, a phone's landscape height.
+    Compact,
+    /// Room for more: an iPad's width and height at full screen or a wide
+    /// Split View, a desktop window.
+    Regular,
+}
+
+impl SizeClass {
+    /// The narrowest width that is [`SizeClass::Regular`] where the
+    /// platform reports no size class: Android's medium window class, in
+    /// points.
+    pub const REGULAR_WIDTH: Points = Points(600.0);
+    /// The lowest height that is [`SizeClass::Regular`] where the platform
+    /// reports no size class: Android's medium window height, in points.
+    pub const REGULAR_HEIGHT: Points = Points(480.0);
+
+    /// The size class of an axis `length` long where the platform reports
+    /// none, at least `regular` long being regular: unspecified while the
+    /// surface has no size.
+    pub fn from_length(length: Points, regular: Points) -> SizeClass {
+        if length.0 <= 0.0 {
+            SizeClass::Unspecified
+        } else if length < regular {
+            SizeClass::Compact
+        } else {
+            SizeClass::Regular
+        }
+    }
+
+    /// Its name (TS's style): `"unspecified"`, `"compact"` or `"regular"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            SizeClass::Unspecified => "unspecified",
+            SizeClass::Compact => "compact",
+            SizeClass::Regular => "regular",
+        }
+    }
+}
+
 /// The kind of device (`platform.idiom`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Idiom {
@@ -291,6 +342,14 @@ pub struct Environment {
     /// ([`crate::Command::Share`], [`crate::share`]); without it, a share
     /// answers "not completed" at once.
     pub share: bool,
+    /// The horizontal size class the platform reports for the surface (iOS:
+    /// its trait collection's); [`SizeClass::Unspecified`] where it reports
+    /// none, and apps read one the core derives
+    /// ([`crate::element::horizontal_size_class`]).
+    pub horizontal_size_class: SizeClass,
+    /// The vertical size class the platform reports, as
+    /// [`Self::horizontal_size_class`].
+    pub vertical_size_class: SizeClass,
 }
 
 impl Environment {
@@ -340,6 +399,8 @@ impl Default for Environment {
             cell: None,
             web_input: false,
             share: false,
+            horizontal_size_class: SizeClass::Unspecified,
+            vertical_size_class: SizeClass::Unspecified,
         }
     }
 }

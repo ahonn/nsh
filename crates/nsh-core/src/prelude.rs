@@ -262,6 +262,11 @@ pub use crate::element::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::element::{background, blocking};
+/// The size classes apps choose their layout by.
+pub use crate::{
+    element::{horizontal_size_class, vertical_size_class},
+    platform::SizeClass,
+};
 /// The system's share sheet ([`crate::share`]).
 pub use crate::{
     element::{can_share, share, share_from},

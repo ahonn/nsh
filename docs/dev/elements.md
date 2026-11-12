@@ -367,6 +367,7 @@ misses the deadline is not waited for again until it catches up (`docs/dev/macos
   `KeyboardMotion::aligned`), and runs the scroll view's inset and scroll in one animation of that curve; Android takes
   the IME's `WindowInsetsAnimation` (interpolator, duration, start; API 30+) and fast-forwards its animators to it
   (`Mounter.keyboardAligned`), the scroll to the input included.
+- **Size classes** (Rust: `horizontal_size_class()` / `vertical_size_class()`, `nsh_core::platform::SizeClass`: `Compact`, `Regular`, `Unspecified`; reactive): what an app switches between a phone's and an iPad's layout by. iOS reports its view's trait collection (`traitCollectionDidChange:` publishes the environment: Slide Over and narrow Split View are compact); the platforms that report none (`Environment::horizontal_size_class` is `Unspecified`) get one the core derives: regular on the desktops (`Environment::desktop()`), else from the window, compact below 600 pt wide or 480 pt high (Android's window size classes), unspecified while it has no size. A test sets it with its `EngineConfig`'s environment.
 - **Controlled inputs**: each native edit carries an edit count; a `value` from JS is applied only if it is based on the latest
   edit, so a slow JS round trip can never overwrite newer typing (React Native's eventCount).
   While an input method composes, a `value` is held natively and applied when the composition ends, if no edit came

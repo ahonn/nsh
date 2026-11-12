@@ -3,7 +3,7 @@
 
 use crate::{
     EdgeInsets, Points, Size,
-    platform::{Idiom, Lifecycle, Locale, LocaleSettings, Os},
+    platform::{Idiom, Lifecycle, Locale, LocaleSettings, Os, SizeClass},
 };
 
 /// The environment of a surface, as the platform reports it.
@@ -81,6 +81,13 @@ pub struct Environment {
     /// The platform shows the system's share sheet
     /// ([`crate::platform::Environment::share`]).
     pub share: bool,
+    /// The horizontal size class the platform reports
+    /// ([`crate::platform::Environment::horizontal_size_class`]); apps read
+    /// [`super::horizontal_size_class`].
+    pub horizontal_size_class: SizeClass,
+    /// The vertical size class the platform reports; apps read
+    /// [`super::vertical_size_class`].
+    pub vertical_size_class: SizeClass,
 }
 
 impl Default for Environment {
@@ -115,6 +122,8 @@ impl Default for Environment {
             cell: None,
             web_input: false,
             share: false,
+            horizontal_size_class: SizeClass::Unspecified,
+            vertical_size_class: SizeClass::Unspecified,
         }
     }
 }

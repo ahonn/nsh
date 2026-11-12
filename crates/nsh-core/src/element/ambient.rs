@@ -28,7 +28,7 @@ use crate::{
     Command, Dialog, EdgeInsets, LayoutAnimation, NodeId, Points, Size,
     canvas::CanvasFont,
     color::Hsla,
-    platform::{Appearance, Idiom, Lifecycle, Locale, LocaleSettings, Os},
+    platform::{Appearance, Idiom, Lifecycle, Locale, LocaleSettings, Os, SizeClass},
     time::Instant,
 };
 
@@ -87,6 +87,8 @@ struct EnvSignals {
     lifecycle: Memo<Lifecycle>,
     screen_color: Memo<bool>,
     share: Memo<bool>,
+    horizontal_size_class: Memo<SizeClass>,
+    vertical_size_class: Memo<SizeClass>,
 }
 
 impl EnvSignals {
@@ -117,6 +119,8 @@ impl EnvSignals {
                 lifecycle: part!(lifecycle),
                 screen_color: part!(screen_color),
                 share: part!(share),
+                horizontal_size_class: computed(move || signal.with(|e| size_class(e, true))),
+                vertical_size_class: computed(move || signal.with(|e| size_class(e, false))),
             }
         })
     }
@@ -253,6 +257,50 @@ fn act(action: Action) {
 /// The surface's size in points (TS: `windowSize()`).
 pub fn window() -> Size<Points> {
     env(|e| e.window)
+}
+
+/// The surface's horizontal size class (UIKit's
+/// `traitCollection.horizontalSizeClass`): [`SizeClass::Compact`] for an
+/// iPhone's width and an iPad's in Slide Over or a narrow Split View,
+/// [`SizeClass::Regular`] for an iPad's at full screen or a wide Split
+/// View. Reading it in a binding follows it, so an app can show its
+/// iPad layout (a [`super::SplitView`]) where it is regular and its phone
+/// layout where it is compact.
+///
+/// iOS reports it. Elsewhere the core derives it: regular on the desktops
+/// (a desktop OS, the web in the desktop idiom, a terminal), as on a Mac;
+/// on the other platforms (Android, the web on a phone or a tablet) from
+/// the window's width ([`SizeClass::REGULAR_WIDTH`], Android's window size
+/// classes), unspecified until the surface has a size. A test sets it
+/// with its `EngineConfig`'s environment.
+pub fn horizontal_size_class() -> SizeClass {
+    env(|e| e.horizontal_size_class)
+}
+
+/// The surface's vertical size class, as [`horizontal_size_class`]:
+/// compact for a phone's height in landscape. Where the platform reports
+/// none, regular on the desktops, else from the window's height
+/// ([`SizeClass::REGULAR_HEIGHT`]).
+pub fn vertical_size_class() -> SizeClass {
+    env(|e| e.vertical_size_class)
+}
+
+/// The size class apps read of one axis ([`horizontal_size_class`]).
+fn size_class(e: &Environment, horizontal: bool) -> SizeClass {
+    let reported = if horizontal {
+        e.horizontal_size_class
+    } else {
+        e.vertical_size_class
+    };
+    if reported != SizeClass::Unspecified {
+        reported
+    } else if e.idiom.desktop_on(e.os) {
+        SizeClass::Regular
+    } else if horizontal {
+        SizeClass::from_length(e.window.width, SizeClass::REGULAR_WIDTH)
+    } else {
+        SizeClass::from_length(e.window.height, SizeClass::REGULAR_HEIGHT)
+    }
 }
 
 /// The edges system UI covers: notch, home indicator (TS: `safeArea()`).

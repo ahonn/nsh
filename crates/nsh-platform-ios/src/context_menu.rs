@@ -165,6 +165,10 @@ define_class!(
             _animator: Option<&ProtocolObject<dyn UIContextMenuInteractionAnimating>>,
         ) {
             cancel_presses(interaction);
+            // Nor does a sideways drag on the preview swipe the view.
+            if let Some(view) = interaction.view() {
+                crate::swipe::context_menu_shown(&view);
+            }
         }
     }
 );

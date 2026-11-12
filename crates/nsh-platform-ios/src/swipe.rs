@@ -40,6 +40,13 @@
 //!   on the open edge keep it open (only the ids change); others close it.
 //!   A view leaving its window closes at once; removing the actions takes
 //!   the gesture, the tray and the offset away.
+//! - A context menu on the view (`context_menu.rs`) keeps its long press:
+//!   its `UIContextMenuInteraction` recognizes once the finger has rested
+//!   a moment, before the menu shows, which would prevent the pan, so the
+//!   pan recognizes alongside it and, when it starts, cancels it (a
+//!   sideways move before the menu shows swipes, as in Mail). Once the
+//!   menu shows, the pan is cancelled for the rest of the touch
+//!   ([`context_menu_shown`]): a drag on the preview never swipes.
 //! - Each button is its own color: the system's red for a destructive one,
 //!   the app's tint, else blue at the leading edge and gray at the trailing
 //!   edge; a button the color of the one outside it (two destructive ones)
@@ -299,6 +306,20 @@ define_class!(
                     .is_some_and(|v| v.isDescendantOfView(&self.ivars().tray))
         }
 
+        /// A context menu on the view does not hold the swipe back once its
+        /// long press started (its recognizers recognize before the menu
+        /// shows, which would prevent the pan): a sideways move before the
+        /// menu shows swipes, and cancels the menu ([`cancel_context_menu`]).
+        #[unsafe(method(gestureRecognizer:shouldRecognizeSimultaneouslyWithGestureRecognizer:))]
+        fn should_recognize_simultaneously(
+            &self,
+            recognizer: &UIGestureRecognizer,
+            other: &UIGestureRecognizer,
+        ) -> bool {
+            recognizer.isKindOfClass(UIPanGestureRecognizer::class())
+                && self.view().is_some_and(|v| is_context_menu_recognizer(other, &v))
+        }
+
         /// The edge pop of a navigation controller goes first.
         #[unsafe(method(gestureRecognizer:shouldRequireFailureOfGestureRecognizer:))]
         fn should_require_failure_of(
@@ -528,6 +549,7 @@ impl SwipeRow {
                     tap.setEnabled(false);
                 }
                 ivars.target.swipes().opening(self);
+                cancel_context_menu(&view);
             }
             UIGestureRecognizerState::Changed => {
                 // In the window: the view moves under the finger.
@@ -1084,6 +1106,60 @@ fn pop_of(recognizer: &UIGestureRecognizer, view: &UIView) -> Option<Pop> {
         responder = r.nextResponder();
     }
     None
+}
+
+/// Whether `recognizer` is one of a `UIContextMenuInteraction`'s on
+/// `view`: on the view, with a context menu, and none of NSH's own (its
+/// presses, its pans, this module's).
+fn is_context_menu_recognizer(recognizer: &UIGestureRecognizer, view: &UIView) -> bool {
+    let on_view = recognizer
+        .view()
+        .is_some_and(|v| std::ptr::eq::<UIView>(&*v, view));
+    on_view
+        && !recognizer.isKindOfClass(crate::press::PressRecognizer::class())
+        && !recognizer.delegate().is_some_and(|d| {
+            let d: &AnyObject = d.as_ref();
+            d.downcast_ref::<SwipeRow>().is_some() || d.downcast_ref::<EventTarget>().is_some()
+        })
+        && view.interactions().iter().any(|i| {
+            AsRef::<AnyObject>::as_ref(&*i)
+                .downcast_ref::<objc2_ui_kit::UIContextMenuInteraction>()
+                .is_some()
+        })
+}
+
+/// Cancels the context menu the long press on `view` was going to show: a
+/// swipe started first. Turning the menu's recognizers off and on cancels
+/// them, and UIKit undoes its press highlight as for any cancelled touch
+/// (taking the interaction off mid-press left the row highlighted).
+fn cancel_context_menu(view: &UIView) {
+    let Some(recognizers) = view.gestureRecognizers() else {
+        return;
+    };
+    for r in recognizers.iter() {
+        if is_context_menu_recognizer(&r, view) && r.isEnabled() {
+            r.setEnabled(false);
+            r.setEnabled(true);
+        }
+    }
+}
+
+/// A context menu showed for the touch on `view`: the views with swipe
+/// actions under it (`view` and those around it) stop following it, so a
+/// sideways drag on the menu's preview does not swipe them. Turning a pan
+/// off and on cancels it for the rest of the touch.
+pub(crate) fn context_menu_shown(view: &UIView) {
+    let mut current = Some(view.retain());
+    while let Some(v) = current {
+        if let Some(row) = v.downcast_ref::<NshView>().and_then(NshView::swipe)
+            && let Some(pan) = row.ivars().pan.borrow().as_ref()
+            && pan.isEnabled()
+        {
+            pan.setEnabled(false);
+            pan.setEnabled(true);
+        }
+        current = v.superview();
+    }
 }
 
 /// Whether `recognizer` is the pan of a scroll view around `view`.

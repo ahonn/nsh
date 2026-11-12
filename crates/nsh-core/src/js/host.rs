@@ -968,6 +968,7 @@ pub const INTERNAL_EVENTS: &[EventKind] = &[
     EventKind::Audio,
     EventKind::Window,
     EventKind::Share,
+    EventKind::DisplayModeChange,
     EventKind::KeyCommand,
     EventKind::Menu,
     EventKind::ViewableItemsChange,

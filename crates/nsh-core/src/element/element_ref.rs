@@ -280,6 +280,28 @@ impl ElementRef {
         self.send(Command::Seek(seconds));
     }
 
+    /// Shows `column` of a split view ([`super::SplitView`]; iOS:
+    /// `showColumn:`), as the sidebar button does: the split view shows it
+    /// in the display mode UIKit picks for it, beside or over the others,
+    /// and reports that mode ([`super::SplitView::on_display_mode_change`]).
+    /// The platforms that lay a split view out as a row ignore it.
+    pub fn show_column(&self, column: crate::split::SplitColumn) {
+        self.send(Command::ShowSplitColumn {
+            column,
+            shown: true,
+        });
+    }
+
+    /// Hides `column` of a split view (iOS: `hideColumn:`), as
+    /// [`Self::show_column`] shows one: hiding the supplementary column
+    /// hides the primary one too, as UIKit does.
+    pub fn hide_column(&self, column: crate::split::SplitColumn) {
+        self.send(Command::ShowSplitColumn {
+            column,
+            shown: false,
+        });
+    }
+
     /// Calls command `name` of a native component with `args`.
     pub fn command(&self, name: &str, args: JsonValue) {
         self.send(Command::Native {

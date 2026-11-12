@@ -516,6 +516,9 @@ struct Node {
     drawing: Option<Arc<crate::canvas::Drawing>>,
     /// A shader's program, uniforms and layer.
     shader: Option<Box<ShaderNode>>,
+    /// A stack the platform places itself: its size there
+    /// ([`Core::set_stack_size`]), which its screens take.
+    stack_size: Option<Size<Points>>,
     /// The `style` prop as written, applied over the class styles.
     inline_style: StylePatch,
     /// `class` / `classList` as set.
@@ -834,6 +837,7 @@ impl Node {
             text_style: TextStyle::default(),
             paint: None,
             animated: Vec::new(),
+            stack_size: None,
             drawing: None,
             shader: matches!(kind, Kind::Shader).then(Box::default),
             inline_style: StylePatch::default(),
@@ -1495,6 +1499,19 @@ impl<M: TextEngine> Core<M> {
         {
             root.reported = Some(size);
             root.insets = insets;
+            self.needs_layout = true;
+        }
+    }
+
+    /// The platform places stack `id` itself, at `size` (a split view's
+    /// column on iOS, sized by `UISplitViewController`): its screens are
+    /// laid out at that size instead of the stack's own layout. `None`
+    /// goes back to the layout.
+    pub fn set_stack_size(&mut self, id: NodeId, size: Option<Size<Points>>) {
+        let Ok(key) = self.key(id) else { return };
+        let node = &mut self.nodes[key as usize];
+        if node.kind == Kind::Stack && node.stack_size != size {
+            node.stack_size = size;
             self.needs_layout = true;
         }
     }
@@ -5125,6 +5142,21 @@ impl<M: TextEngine> Core<M> {
                     flags |= dirty::VIEW_PROPS;
                 }
             }
+            Prop::Split(config) => {
+                // The columns are the core's to fill in, when it mounts the
+                // props (`split_columns`).
+                let props = node.props.get_or_insert_default();
+                let columns = props
+                    .split
+                    .as_mut()
+                    .map(|s| std::mem::take(&mut s.columns))
+                    .unwrap_or_default();
+                let config = crate::split::SplitConfig { columns, ..*config };
+                if props.split.as_ref() != Some(&config) {
+                    props.split = Some(config);
+                    flags |= dirty::VIEW_PROPS;
+                }
+            }
             Prop::Accessibility(prop) => {
                 // A label changing on mounted props goes alone: it is
                 // the one that follows app state (a count, a value).
@@ -5655,6 +5687,7 @@ impl<M: TextEngine> Core<M> {
         if child_kind == Kind::HeaderItem {
             self.mark(parent, dirty::SCREEN);
         }
+        self.split_columns_changed(parent);
         if let Some(child_layout) = self.nodes[child as usize].layout {
             // List cells, screens, modals and header items stay independent
             // layout roots.
@@ -5741,6 +5774,7 @@ impl<M: TextEngine> Core<M> {
             self.mark(key, dirty::VIEW | dirty::ANIMATION);
         }
         self.spacing_changed(parent, NO_KEY);
+        self.split_columns_changed(parent);
         if self.pointer_none_classes > 0 && self.pointer_region(parent).is_some() {
             // It no longer inherits the region's `none`.
             self.pointer_pending.push(key);
@@ -6487,8 +6521,23 @@ impl<M: TextEngine> Core<M> {
                 self.mount.push(MountItem::Gestures { id, values });
             }
             if flags & dirty::VIEW_PROPS != 0 {
-                let props = node.mounted_props();
-                self.mount.push(MountItem::ViewProps { id, props });
+                let mut props = node.mounted_props();
+                if let Some(split) = props.split.as_mut() {
+                    split.columns = self.split_columns(key);
+                    // A new split view's ahead of its columns' insertion: the
+                    // platform takes them as columns, not subviews.
+                    let item = MountItem::ViewProps { id, props };
+                    match self
+                        .mount
+                        .iter()
+                        .position(|m| matches!(m, MountItem::Create { id: c, .. } if *c == id))
+                    {
+                        Some(at) => self.mount.insert(at + 1, item),
+                        None => self.mount.push(item),
+                    }
+                } else {
+                    self.mount.push(MountItem::ViewProps { id, props });
+                }
             } else if flags & dirty::LABEL != 0 {
                 let label = node
                     .props
@@ -7358,13 +7407,54 @@ impl<M: TextEngine> Core<M> {
         self.header_heights != crate::NO_NATIVE_HEADER
     }
 
-    /// The size of screen `key`: its stack's (`None` outside a stack).
+    /// The size of screen `key`: its stack's (`None` outside a stack), as
+    /// the platform reported it for a stack it places itself
+    /// ([`Self::set_stack_size`]), else as laid out.
     fn screen_size(&self, key: Key) -> Option<Size<Points>> {
         let parent = self.nodes[key as usize].parent;
         let p = self.nodes.get(parent as usize)?;
+        if p.kind == Kind::Stack
+            && let Some(size) = p.stack_size
+        {
+            return Some(size);
+        }
         let stack_layout = p.layout.filter(|_| p.kind == Kind::Stack)?;
         let s = self.rounded_layout(stack_layout).size;
         Some(size_pt(s.width, s.height))
+    }
+
+    /// The nav stack of each column of split view `key` (its children, in
+    /// order): the first stack inside each child, not inside a page or a
+    /// dialog of its own, once created ([`crate::split::SplitConfig::columns`]).
+    fn split_columns(&self, key: Key) -> Vec<Option<NodeId>> {
+        self.nodes[key as usize]
+            .children
+            .iter()
+            .map(|&child| {
+                let mut pending = vec![child];
+                while let Some(k) = pending.pop() {
+                    let n = &self.nodes[k as usize];
+                    match n.kind {
+                        Kind::Stack if n.created => return Some(n.id),
+                        Kind::Screen | Kind::Modal | Kind::Overlay | Kind::Stack => {}
+                        _ => pending.extend(n.children.iter().rev()),
+                    }
+                }
+                None
+            })
+            .collect()
+    }
+
+    /// Node `key`'s children changed: if it is a split view, its columns
+    /// are mounted again.
+    fn split_columns_changed(&mut self, key: Key) {
+        if self.nodes[key as usize]
+            .props
+            .as_ref()
+            .is_some_and(|p| p.split.is_some())
+        {
+            self.mark(key, dirty::VIEW_PROPS);
+        }
     }
 
     /// The `header` slot item of screen `key`, once created.

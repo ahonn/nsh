@@ -389,6 +389,13 @@ pub struct ViewProps {
     /// Buttons a sideways swipe reveals at the view's leading or trailing
     /// edge (`Interactive::leading_swipe_actions`; iOS shows them).
     pub swipe_actions: crate::swipe::SwipeActions,
+    /// The view is a split view ([`crate::element::SplitView`]): its
+    /// children are its columns. iOS shows it as a `UISplitViewController`
+    /// whose columns are the [`crate::split::SplitConfig::columns`] nav
+    /// stacks; the other platforms lay it out as the plain row of columns
+    /// the core made. On a new split view the core sends it ahead of the
+    /// view's children.
+    pub split: Option<crate::split::SplitConfig>,
 }
 
 impl ViewProps {

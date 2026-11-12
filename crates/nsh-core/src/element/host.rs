@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use super::{
-    Accessible, AnyElement, Interactive, IntoReactive,
+    Accessible, AnyElement, Interactive, IntoReactive, Styled,
     builder::{ElNode, Element, IntoElement, IntoListener, Listener, ParentElement},
     events::{
         self, CaretEvent, Composition, HintReason, NativeEvent, OverlayPosition, Selection,
@@ -25,9 +25,10 @@ use crate::{
         CanvasFont, CanvasGradient, CanvasImage, CanvasOp, CanvasTextAlign, CanvasTextBaseline,
         Composite, Drawing, FillRule, LineCap, LineJoin, Num, Paint, Path, PathOp, ViewPaint,
     },
-    geometry::{Bounds, Corners, Percentage, Point, Radians, ScaledPixels},
+    geometry::{Bounds, Corners, Percentage, Point, Radians, ScaledPixels, px},
     js::host::HostProps,
     overlay::{Align, OverlayAnchor, Placement},
+    split::{SplitBehavior, SplitButtonVisibility, SplitColumn, SplitConfig, SplitDisplayMode},
     style::SvgPaint,
 };
 
@@ -1152,6 +1153,282 @@ impl Screen {
             events::unit,
         )
     }
+}
+
+crate::static_reactive!(SplitDisplayMode: SplitDisplayMode);
+crate::static_reactive!(SplitBehavior: SplitBehavior);
+crate::static_reactive!(SplitButtonVisibility: SplitButtonVisibility);
+
+/// A split view: two or three columns side by side, each normally a
+/// [`Stack`] (`nsh_base::nav_stack`) with its own pages and header, made
+/// by `nsh_base::split_view` ([`crate::split`]). Its columns are the
+/// [`SplitView::primary`] (a sidebar), the optional
+/// [`SplitView::supplementary`] (a list; with it the split view has three
+/// columns) and the [`SplitView::secondary`] (the detail).
+///
+/// iOS shows it as a column-style `UISplitViewController`: each column's
+/// nav stack is the column, with its own navigation bar, and UIKit decides
+/// which columns show from the preferences here and the room it has
+/// (reported as [`SplitView::on_display_mode_change`]); the column's pages
+/// are laid out at the column's width. A column that holds no nav stack
+/// shows nothing there: the first nav stack inside a column is the
+/// column's. Elsewhere the split view is a row: the primary and
+/// supplementary columns at their preferred widths, the secondary column
+/// taking the rest, the columns the preferred display mode leaves out
+/// hidden ([`SplitDisplayMode::shows`]).
+///
+/// It lays itself out as a row (`flex-direction: row`); give it its place
+/// as any view (`.flex_1()`).
+#[derive(Clone)]
+pub struct SplitView {
+    node: ElNode,
+    /// Primary, supplementary, secondary.
+    columns: [Option<ElNode>; 3],
+    /// The options set once.
+    config: SplitConfig,
+    /// The options read in bindings, applied over `config` in order.
+    bound: Vec<BoundSplitOption>,
+}
+
+/// An option of a split view read in a binding.
+type BoundSplitOption = std::rc::Rc<dyn Fn(&mut SplitConfig)>;
+
+impl Element for SplitView {
+    fn node(&mut self) -> &mut ElNode {
+        &mut self.node
+    }
+}
+
+impl Accessible for SplitView {}
+
+/// A column of a split view, styled as the row lays it out.
+struct SplitColumnEl(ElNode);
+
+impl Element for SplitColumnEl {
+    fn node(&mut self) -> &mut ElNode {
+        &mut self.0
+    }
+}
+
+impl ParentElement for SplitColumnEl {}
+
+impl IntoElement for SplitColumnEl {
+    fn into_element(self) -> AnyElement {
+        AnyElement(self.0)
+    }
+}
+
+impl SplitView {
+    /// A split view with no columns yet.
+    pub(crate) fn new() -> Self {
+        Self {
+            node: ElNode::new(Tag::View),
+            columns: [None, None, None],
+            config: SplitConfig::default(),
+            bound: Vec::new(),
+        }
+    }
+
+    fn column(mut self, column: SplitColumn, element: impl IntoElement) -> Self {
+        let index = match column {
+            SplitColumn::Primary => 0,
+            SplitColumn::Supplementary => 1,
+            SplitColumn::Secondary => 2,
+        };
+        self.columns[index] = Some(element.into_element().0);
+        self
+    }
+
+    fn option<T: 'static>(
+        mut self,
+        value: impl IntoReactive<T>,
+        apply: impl Fn(&mut SplitConfig, T) + 'static,
+    ) -> Self {
+        match value.into_reactive() {
+            super::Reactive::Static(value) => apply(&mut self.config, value),
+            super::Reactive::Bound(value) => self
+                .bound
+                .push(std::rc::Rc::new(move |config| apply(config, value()))),
+        }
+        self
+    }
+
+    /// The leading column, a sidebar: normally a nav stack whose page lists
+    /// the app's sections. Required, as the secondary column is: a split
+    /// view without one has an empty column there.
+    pub fn primary(self, column: impl IntoElement) -> Self {
+        self.column(SplitColumn::Primary, column)
+    }
+
+    /// The middle column, a list: normally a nav stack whose page lists the
+    /// records of the section chosen in the primary column. With it the
+    /// split view has three columns.
+    pub fn supplementary(self, column: impl IntoElement) -> Self {
+        self.column(SplitColumn::Supplementary, column)
+    }
+
+    /// The trailing column, the detail: normally a nav stack whose root
+    /// page is the chosen record, which pushes further pages.
+    pub fn secondary(self, column: impl IntoElement) -> Self {
+        self.column(SplitColumn::Secondary, column)
+    }
+
+    /// Which columns the split view shows (default
+    /// [`SplitDisplayMode::Automatic`]). On iOS a preference UIKit weighs
+    /// against the room it has, and which the user's sidebar button or
+    /// swipe overrides until it changes again; elsewhere the columns shown.
+    pub fn preferred_display_mode(self, mode: impl IntoReactive<SplitDisplayMode>) -> Self {
+        self.option(mode, |config, mode| config.display_mode = mode)
+    }
+
+    /// How the secondary column makes room for the others on iOS (default
+    /// [`SplitBehavior::Automatic`]).
+    pub fn preferred_split_behavior(self, behavior: impl IntoReactive<SplitBehavior>) -> Self {
+        self.option(behavior, |config, behavior| config.behavior = behavior)
+    }
+
+    /// The primary column's width (iOS: UIKit's by default; elsewhere
+    /// [`SplitConfig::PRIMARY_WIDTH`]).
+    pub fn preferred_primary_column_width(self, width: impl IntoReactive<Points>) -> Self {
+        self.option(width, |config, width| {
+            config.primary_width.preferred = Some(width)
+        })
+    }
+
+    /// The narrowest the primary column may be.
+    pub fn min_primary_column_width(self, width: impl IntoReactive<Points>) -> Self {
+        self.option(width, |config, width| {
+            config.primary_width.min = Some(width)
+        })
+    }
+
+    /// The widest the primary column may be.
+    pub fn max_primary_column_width(self, width: impl IntoReactive<Points>) -> Self {
+        self.option(width, |config, width| {
+            config.primary_width.max = Some(width)
+        })
+    }
+
+    /// The supplementary column's width (iOS: UIKit's by default;
+    /// elsewhere [`SplitConfig::SUPPLEMENTARY_WIDTH`]).
+    pub fn preferred_supplementary_column_width(self, width: impl IntoReactive<Points>) -> Self {
+        self.option(width, |config, width| {
+            config.supplementary_width.preferred = Some(width)
+        })
+    }
+
+    /// The narrowest the supplementary column may be.
+    pub fn min_supplementary_column_width(self, width: impl IntoReactive<Points>) -> Self {
+        self.option(width, |config, width| {
+            config.supplementary_width.min = Some(width)
+        })
+    }
+
+    /// The widest the supplementary column may be.
+    pub fn max_supplementary_column_width(self, width: impl IntoReactive<Points>) -> Self {
+        self.option(width, |config, width| {
+            config.supplementary_width.max = Some(width)
+        })
+    }
+
+    /// Whether the system's button that shows and hides the sidebar shows
+    /// in the columns' headers (iOS; default
+    /// [`SplitButtonVisibility::Automatic`]).
+    pub fn display_mode_button_visibility(
+        self,
+        visibility: impl IntoReactive<SplitButtonVisibility>,
+    ) -> Self {
+        self.option(visibility, |config, visibility| config.button = visibility)
+    }
+
+    /// The columns are about to show in another display mode (iOS): the
+    /// user showed or hid one (the sidebar button, a swipe, a press beside
+    /// a column over the secondary one), the app did
+    /// ([`super::ElementRef::show_column`]), or the room changed (a
+    /// rotation, Split View). Elsewhere the columns follow the preferred
+    /// display mode, which the app knows, and this is never raised.
+    pub fn on_display_mode_change<M>(
+        mut self,
+        listener: impl IntoListener<SplitDisplayMode, M>,
+    ) -> Self {
+        listen(
+            &mut self.node,
+            EventKind::DisplayModeChange,
+            listener.into_listener(),
+            events::display_mode,
+        );
+        self
+    }
+}
+
+impl IntoElement for SplitView {
+    fn into_element(self) -> AnyElement {
+        let SplitView {
+            mut node,
+            columns,
+            config,
+            bound,
+        } = self;
+        let fixed = bound.is_empty().then(|| config.clone());
+        let config: std::rc::Rc<dyn Fn() -> SplitConfig> = std::rc::Rc::new(move || {
+            let mut config = config.clone();
+            for apply in &bound {
+                apply(&mut config);
+            }
+            config
+        });
+        let prop = match fixed {
+            Some(config) => super::Reactive::Static(config),
+            None => super::Reactive::Bound(config.clone()),
+        };
+        bind_prop(&mut node, prop, |config| Prop::Split(Box::new(config)));
+        let [primary, supplementary, secondary] = columns;
+        let triple = supplementary.is_some();
+        // On iOS UIKit shows and sizes the columns: they are laid out side
+        // by side, every one, until their sizes come.
+        let row = super::try_os() != Some(crate::platform::Os::Ios);
+        let mut split = SplitColumnEl(node).flex_row();
+        for (column, element) in [
+            (SplitColumn::Primary, primary),
+            (SplitColumn::Supplementary, supplementary),
+            (SplitColumn::Secondary, secondary),
+        ] {
+            let element = match element {
+                Some(element) => element,
+                None if column == SplitColumn::Supplementary => continue,
+                None => ElNode::new(Tag::View),
+            };
+            let config = config.clone();
+            let element = SplitColumnEl(element).style_with(move |s| {
+                let config = config();
+                // Over a column's own flex (`flex: 1` around a nav stack):
+                // its width, from its own size.
+                let s = match column {
+                    SplitColumn::Primary => s
+                        .flex_auto()
+                        .flex_none()
+                        .w(config.primary_width.resolved(SplitConfig::PRIMARY_WIDTH)),
+                    SplitColumn::Supplementary => s.flex_auto().flex_none().w(config
+                        .supplementary_width
+                        .resolved(SplitConfig::SUPPLEMENTARY_WIDTH)),
+                    SplitColumn::Secondary => s.flex_1().min_w(px(0.0)),
+                };
+                if row && !config.display_mode.shows(column, triple) {
+                    s.hidden()
+                } else {
+                    s
+                }
+            });
+            split = split.child(element);
+        }
+        AnyElement(split.0)
+    }
+}
+
+/// The core's part of `nsh_base::split_view`, which apps use.
+#[doc(hidden)]
+pub fn split_view() -> SplitView {
+    SplitView::new()
 }
 
 impl Overlay {

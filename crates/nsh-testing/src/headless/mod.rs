@@ -45,6 +45,8 @@ mod net;
 mod pointer;
 mod share;
 mod speech;
+#[cfg(test)]
+mod split_tests;
 mod swipe;
 mod windows;
 

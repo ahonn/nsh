@@ -257,6 +257,7 @@ events! {
     Audio = "onAudio": "A sound or a player reported (root only; payload: [`EventPayload::Audio`]).",
     Window = "onWindow" as "": "A window of the app's own reported its state, a close press or that it closed (on its root node; desktops; payload: [`EventPayload::Window`]).",
     Share = "onShare": "A [`Command::Share`] request finished: the share sheet closed (root only; payload: `id`, `completed`: whether the user shared, `activity`: the activity they chose, absent when none).",
+    DisplayModeChange = "onDisplayModeChange": "A split view's columns are about to show in another display mode: the user showed or hid a column (the sidebar button, a swipe), or the room changed (a rotation, Split View) (payload: `displayMode`, [`crate::split::SplitDisplayMode::name`]).",
 }
 
 /// What an input holds, for the system's autofill and suggestions
@@ -2153,6 +2154,18 @@ pub enum Command {
         /// The view a popover points at; `None`: the surface.
         anchor: Option<NodeId>,
     },
+    /// Show or hide a column of a split view (on the split view;
+    /// [`crate::split`]): UIKit's `showColumn:` / `hideColumn:`, which
+    /// change the display mode the split view shows (and report it as
+    /// [`EventKind::DisplayModeChange`]). The platforms that lay the split
+    /// view out as a row ignore it: their columns follow the preferred
+    /// display mode.
+    ShowSplitColumn {
+        /// The column.
+        column: crate::split::SplitColumn,
+        /// Show it (else hide it).
+        shown: bool,
+    },
 }
 
 /// A haptic the device plays ([`Command::Haptic`], TS: `Haptics` of
@@ -2871,6 +2884,10 @@ pub enum Prop {
     /// root's [`EventKind::Menu`]. Empty is none
     /// ([`crate::ViewProps::context_menu`]).
     ContextMenu(Vec<crate::desktop::MenuItem>),
+    /// The view is a split view, its children its columns, with these
+    /// options ([`crate::element::SplitView`], [`crate::ViewProps::split`]).
+    /// Set by Rust, never by JS yet; the core fills in the columns.
+    Split(Box<crate::split::SplitConfig>),
 }
 
 /// Where a web view loads from.

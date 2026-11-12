@@ -57,6 +57,7 @@ pub mod shader;
 pub mod shape;
 pub mod share;
 pub mod speech;
+pub mod split;
 pub mod storage;
 mod style;
 #[cfg(feature = "svg")]

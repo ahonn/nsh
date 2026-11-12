@@ -180,7 +180,7 @@ pub use crate::{
         MenuSeparatorElement, MenuSeparatorProps, Submenu, SubmenuElement, SubmenuEvent,
         SubmenuProps, context_menu, menu, menu_item, menu_separator, submenu,
     },
-    navigation::{dialog, nav_page, nav_stack},
+    navigation::{dialog, nav_page, nav_stack, split_view},
     number_input::{
         NumberInput, NumberInputElement, NumberInputEvent, NumberInputProps, number_input,
     },

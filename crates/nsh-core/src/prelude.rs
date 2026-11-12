@@ -262,10 +262,12 @@ pub use crate::element::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::element::{background, blocking};
-/// The size classes apps choose their layout by.
+/// Split views ([`crate::split`]) and the size classes apps choose their
+/// layout by.
 pub use crate::{
-    element::{horizontal_size_class, vertical_size_class},
+    element::{SplitView, horizontal_size_class, vertical_size_class},
     platform::SizeClass,
+    split::{SplitBehavior, SplitButtonVisibility, SplitColumn, SplitDisplayMode},
 };
 /// The system's share sheet ([`crate::share`]).
 pub use crate::{

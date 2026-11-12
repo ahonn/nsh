@@ -732,7 +732,10 @@ pub(crate) fn encode(batch: MountBatch) -> Encoded {
                     | Command::PickScreenColor { .. }
                     // No share sheet yet (`Environment::share`): the core
                     // answers "not completed" first.
-                    | Command::Share { .. } => e.int(-1),
+                    | Command::Share { .. }
+                    // No split view of its own: the row of columns follows
+                    // the preferred display mode.
+                    | Command::ShowSplitColumn { .. } => e.int(-1),
                     // `SystemUi.openPath`: the file at the path, a `content:`
                     // URI the app's FilesProvider serves, to the system's
                     // viewer (`ACTION_VIEW`). `OpenPath` alone; the dialogs

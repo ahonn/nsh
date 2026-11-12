@@ -105,7 +105,7 @@ pub use nsh_macros::{
 
 // The core's parts of `nsh_base`'s navigation and dialogs.
 #[doc(hidden)]
-pub use self::host::{modal, screen, stack};
+pub use self::host::{modal, screen, split_view, stack};
 pub use self::{
     ambient::*,
     animated::{
@@ -151,10 +151,10 @@ pub use self::{
     flow::{Each, If, IntoElements, Reset, catch_error, dynamic, each, when},
     host::{
         CanvasArg, CanvasPaint, CanvasView, Input, InputAccessoryView, IntoUniform, Modal,
-        NativeView, Orientation, Overlay, Painter, Screen, Scroll, ShaderView, Stack, Svg, Uniform,
-        Video, WebView, canvas, input, input_accessory_view, native, overlay, screen_effect,
-        screen_transition, scroll, shader, shader_effect, shader_transition, svg, video, web_view,
-        web_view_html,
+        NativeView, Orientation, Overlay, Painter, Screen, Scroll, ShaderView, SplitView, Stack,
+        Svg, Uniform, Video, WebView, canvas, input, input_accessory_view, native, overlay,
+        screen_effect, screen_transition, scroll, shader, shader_effect, shader_transition, svg,
+        video, web_view, web_view_html,
     },
     js::{JsClass, JsHost, JsIn, JsKind, JsOwned, JsPrimitive, JsRaw},
     json_host::from_json,

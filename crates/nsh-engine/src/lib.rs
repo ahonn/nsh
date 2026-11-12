@@ -1229,6 +1229,7 @@ enum Message {
     Displays(Arc<[nsh_core::desktop::Display]>),
     RootSize(NodeId, Size<Points>, EdgeInsets),
     ScreenHeader(NodeId, Option<Points>),
+    StackSize(NodeId, Option<Size<Points>>),
     Frame,
     States(NodeId, u16),
     FontsChanged,
@@ -1397,6 +1398,13 @@ impl EngineControl {
     /// its header (`None`: let the core estimate it).
     pub fn set_screen_header(&self, id: NodeId, height: Option<Points>) {
         let _ = self.tx.send(Message::ScreenHeader(id, height));
+    }
+
+    /// The platform places stack `id` itself, at `size` (a split view's
+    /// column): its screens are laid out at that size; `None` gives them
+    /// the stack's own layout again (`Core::set_stack_size`).
+    pub fn set_stack_size(&self, id: NodeId, size: Option<Size<Points>>) {
+        let _ = self.tx.send(Message::StackSize(id, size));
     }
 
     /// Applies a development update in place. When it cannot be applied,
@@ -3568,6 +3576,7 @@ fn handle<M: TextEngine>(script: Option<&Script>, state: &mut State<M>, message:
         }
         Message::RootSize(id, size, insets) => state.core.set_root_size(id, size, insets),
         Message::ScreenHeader(id, height) => state.core.set_screen_header(id, height),
+        Message::StackSize(id, size) => state.core.set_stack_size(id, size),
         Message::Frame => {
             state.frame_requested = false;
             state.core.run_frame(nsh_core::time::now());

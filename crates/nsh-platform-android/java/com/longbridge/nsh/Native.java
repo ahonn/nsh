@@ -86,6 +86,7 @@ final class Native {
     static final int AUDIO = 74;
     static final int WINDOW = 75;
     static final int SHARE = 76;
+    static final int DISPLAY_MODE_CHANGE = 77;
 
     /**
      * Draws the SVG {@code bytes} for a view {@code maxPx} pixels on its longer side, with its shorter side that long

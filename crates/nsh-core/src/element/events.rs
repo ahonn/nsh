@@ -328,6 +328,11 @@ pub(crate) fn text(p: &EventPayload) -> Option<Cow<'_, str>> {
     }
 }
 
+/// A split view's display mode ([`crate::EventKind::DisplayModeChange`]).
+pub(crate) fn display_mode(p: &EventPayload) -> Option<Cow<'_, crate::split::SplitDisplayMode>> {
+    crate::split::SplitDisplayMode::from_name(string(p, "displayMode")?).map(Cow::Owned)
+}
+
 pub(crate) fn key(p: &EventPayload) -> Option<Cow<'_, str>> {
     string(p, "key").map(Cow::Borrowed)
 }

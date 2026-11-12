@@ -33707,6 +33707,222 @@ fn symbol_images_are_contained_by_default_and_pass_unchanged() {
     );
 }
 
+/// Split views (`SplitView`): the platforms get the options and each
+/// column's nav stack ahead of the columns, a row lays the columns out by
+/// the display mode, and the pages of a column the platform sizes take its
+/// size.
+mod rust_split_views {
+    use std::cell::RefCell;
+
+    use super::*;
+    use crate::{
+        PayloadValue,
+        element::{Root, screen, split_view, stack},
+        platform::Os,
+        prelude::*,
+        split::SplitConfig,
+    };
+
+    thread_local! {
+        static MODES: RefCell<Vec<SplitDisplayMode>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn page(title: &'static str) -> impl IntoElement {
+        stack().child(screen().title(title).child(text(title)))
+    }
+
+    /// A sidebar, a list (its stack inside a view of its own) and a detail;
+    /// "Hide" asks for the secondary column alone, "Show" shows the
+    /// sidebar.
+    #[component]
+    fn Mail() -> impl IntoElement {
+        let mode = signal(SplitDisplayMode::Automatic);
+        let split = element_ref();
+        view()
+            .flex_1()
+            .child(text("Hide").on_press(move || mode.set(SplitDisplayMode::SecondaryOnly)))
+            .child(text("Show").on_press(move || split.show_column(SplitColumn::Primary)))
+            .child(
+                split_view()
+                    .element_ref(&split)
+                    .primary(page("Mailboxes"))
+                    .supplementary(view().flex_1().child(page("Inbox")))
+                    .secondary(page("Message"))
+                    .preferred_display_mode(move || mode.get())
+                    .preferred_supplementary_column_width(px(360.0))
+                    .on_display_mode_change(|mode: &SplitDisplayMode| {
+                        MODES.with(|m| m.borrow_mut().push(*mode))
+                    })
+                    .flex_1(),
+            )
+    }
+
+    fn mount(os: Os) -> (Core<FakeEngine>, MountBatch) {
+        let mut c = Core::new(FakeEngine::default(), size_pt(1200.0, 800.0));
+        c.set_tokens(crate::element::tokens::sample());
+        c.set_environment(crate::element::Environment {
+            os,
+            window: size_pt(1200.0, 800.0),
+            ..Default::default()
+        });
+        c.mount_root(&Root::of::<Mail>());
+        let batch = c.commit().unwrap();
+        (c, batch)
+    }
+
+    fn created(batch: &MountBatch, kind: ViewKind) -> Vec<NodeId> {
+        batch
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                MountItem::Create { id, kind: k } if *k == kind => Some(*id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The split view's id, its config and where its props went in `batch`.
+    fn split_props(batch: &MountBatch) -> (NodeId, SplitConfig, usize) {
+        batch
+            .items
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(at, item)| match item {
+                MountItem::ViewProps { id, props } => {
+                    props.split.clone().map(|split| (*id, split, at))
+                }
+                _ => None,
+            })
+            .expect("a split view's props")
+    }
+
+    fn text_id(batch: &MountBatch, label: &str) -> NodeId {
+        batch
+            .items
+            .iter()
+            .find_map(|item| match item {
+                MountItem::Text { id, text, .. } if text.text == label => Some(*id),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no text {label}"))
+    }
+
+    #[test]
+    fn a_split_view_names_each_columns_stack_before_its_columns_go_in() {
+        let (_, batch) = mount(Os::Ios);
+        let stacks = created(&batch, ViewKind::Stack);
+        assert_eq!(stacks.len(), 3);
+        let (split, config, at) = split_props(&batch);
+        assert_eq!(
+            config.columns,
+            stacks.iter().copied().map(Some).collect::<Vec<_>>(),
+            "the list's stack is found inside its view"
+        );
+        assert!(config.triple());
+        assert_eq!(config.column(SplitColumn::Secondary), Some(stacks[2]));
+        assert_eq!(
+            config.supplementary_width.preferred,
+            Some(px(360.0)),
+            "{config:?}"
+        );
+        let create = batch
+            .items
+            .iter()
+            .position(|item| matches!(item, MountItem::Create { id, .. } if *id == split))
+            .unwrap();
+        let first_column = batch
+            .items
+            .iter()
+            .position(|item| matches!(item, MountItem::Insert { parent, .. } if *parent == split))
+            .unwrap();
+        assert!(
+            create < at && at < first_column,
+            "{create} {at} {first_column}"
+        );
+    }
+
+    #[test]
+    fn a_row_lays_its_columns_out_by_width_and_display_mode() {
+        let (mut c, batch) = mount(Os::Web);
+        let stacks = created(&batch, ViewKind::Stack);
+        let width = |batch: &MountBatch, id| frame_of(batch, id).map(|f| f.size.width.0);
+        assert_eq!(width(&batch, stacks[0]), Some(280.0));
+        assert_eq!(width(&batch, stacks[1]), Some(360.0));
+        assert_eq!(width(&batch, stacks[2]), Some(1200.0 - 280.0 - 360.0));
+
+        let hide = text_id(&batch, "Hide");
+        assert!(c.component_event(hide, EventKind::Press, &EventPayload::None));
+        let batch = c.commit().unwrap();
+        let (_, config, _) = split_props(&batch);
+        assert_eq!(config.display_mode, SplitDisplayMode::SecondaryOnly);
+        assert_eq!(width(&batch, stacks[2]), Some(1200.0));
+        assert_eq!(frame_of(&batch, stacks[2]).unwrap().origin.x.0, 0.0);
+    }
+
+    #[test]
+    fn ios_lays_every_column_out_whatever_the_display_mode() {
+        let (mut c, batch) = mount(Os::Ios);
+        let hide = text_id(&batch, "Hide");
+        let stacks = created(&batch, ViewKind::Stack);
+        assert!(c.component_event(hide, EventKind::Press, &EventPayload::None));
+        let batch = c.commit().unwrap();
+        // The props change; UIKit hides the columns, the layout keeps them.
+        assert_eq!(
+            split_props(&batch).1.display_mode,
+            SplitDisplayMode::SecondaryOnly
+        );
+        assert_eq!(frame_of(&batch, stacks[0]), None);
+    }
+
+    #[test]
+    fn a_columns_pages_take_the_size_the_platform_gives_its_stack() {
+        let (mut c, batch) = mount(Os::Ios);
+        let stacks = created(&batch, ViewKind::Stack);
+        let screens = created(&batch, ViewKind::Screen);
+        assert_eq!(frame_of(&batch, screens[0]).unwrap().size.width.0, 280.0);
+        c.set_stack_size(stacks[0], Some(size_pt(320.0, 760.0)));
+        let batch = c.commit().unwrap();
+        assert_eq!(
+            frame_of(&batch, screens[0]).unwrap().size,
+            size_pt(320.0, 760.0)
+        );
+        c.set_stack_size(stacks[0], None);
+        let batch = c.commit().unwrap();
+        assert_eq!(frame_of(&batch, screens[0]).unwrap().size.width.0, 280.0);
+    }
+
+    #[test]
+    fn display_mode_changes_reach_the_app_and_columns_are_shown_on_request() {
+        MODES.with(|m| m.borrow_mut().clear());
+        let (mut c, batch) = mount(Os::Ios);
+        let (split, ..) = split_props(&batch);
+        let payload = EventPayload::Map(vec![(
+            "displayMode",
+            PayloadValue::Str("oneOverSecondary".into()),
+        )]);
+        assert!(c.component_event(split, EventKind::DisplayModeChange, &payload));
+        MODES.with(|m| assert_eq!(*m.borrow(), [SplitDisplayMode::OneOverSecondary]));
+
+        let show = text_id(&batch, "Show");
+        assert!(c.component_event(show, EventKind::Press, &EventPayload::None));
+        let batch = c.commit().unwrap();
+        assert!(
+            batch.items.iter().any(|item| matches!(
+                item,
+                MountItem::Command {
+                    id,
+                    command: Command::ShowSplitColumn {
+                        column: SplitColumn::Primary,
+                        shown: true,
+                    },
+                } if *id == split
+            )),
+            "{:?}",
+            batch.items
+        );
+    }
+}
 
 /// Size classes (`horizontal_size_class`, `vertical_size_class`): the
 /// platform's, else derived from the desktop idiom and the window.

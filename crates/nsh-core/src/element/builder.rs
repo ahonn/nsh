@@ -654,6 +654,17 @@ impl IntoElement for AnyElement {
     }
 }
 
+impl AnyElement {
+    /// Identifies the element among its siblings when they are made again,
+    /// as [`Element::key`] does for a typed element: a region that makes an
+    /// element of another key makes a new node, with none of the last one's
+    /// state (a page's header, its controller).
+    pub fn key(mut self, key: impl Into<SharedString>) -> Self {
+        self.0.key = Some(key.into());
+        self
+    }
+}
+
 impl IntoElement for SharedString {
     fn into_element(self) -> AnyElement {
         text(self).into_element()

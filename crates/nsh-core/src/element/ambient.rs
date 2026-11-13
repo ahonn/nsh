@@ -881,6 +881,13 @@ pub fn close_notification(id: impl Into<String>) {
     )));
 }
 
+/// Removes every notification of the app's, shown or waiting to show, those
+/// an earlier run of the app left included where the platform can reach
+/// them (TS: `Notifications.closeAll`): what signing out clears.
+pub fn close_all_notifications() {
+    act(Action::Notification(super::NotificationAction::CloseAll));
+}
+
 /// Shows `count` on the app's icon, 0 clears it (TS: `Notifications.setBadge`).
 pub fn set_badge(count: u32) {
     act(Action::Notification(super::NotificationAction::SetBadge(
@@ -1358,7 +1365,7 @@ pub fn timer(delay: Duration) -> Delay {
 pub fn timer_until(at: Instant) -> Delay {
     Delay {
         at,
-        registered: false,
+        timer: None,
         #[cfg(not(target_arch = "wasm32"))]
         elsewhere: None,
     }
@@ -1371,8 +1378,9 @@ pub fn timer_until(at: Instant) -> Delay {
 #[derive(Debug)]
 pub struct Delay {
     at: Instant,
-    /// The core keeps it.
-    registered: bool,
+    /// Its timer in the core, which dropping the delay takes back (a task
+    /// cancelled before its time).
+    timer: Option<task::TimerKey>,
     #[cfg(not(target_arch = "wasm32"))]
     elsewhere: Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
 }
@@ -1389,15 +1397,18 @@ impl Future for Delay {
             return sleep.as_mut().poll(cx);
         }
         if crate::time::now() >= self.at {
+            // Its timer goes too if it has not fired yet (the task was
+            // polled for something else).
+            self.timer = None;
             return std::task::Poll::Ready(());
         }
-        if self.registered {
+        if let Some(timer) = &self.timer {
+            timer.set_waker(cx.waker());
             return std::task::Poll::Pending;
         }
         match super::reactive::try_with_data(|d| d.ambient.executor.clone()).flatten() {
             Some(executor) => {
-                executor.add_timer(self.at, cx.waker().clone());
-                self.registered = true;
+                self.timer = Some(executor.add_timer(self.at, cx.waker().clone()));
                 std::task::Poll::Pending
             }
             #[cfg(not(target_arch = "wasm32"))]

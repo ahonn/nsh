@@ -789,6 +789,8 @@ fn decode_header_item(
             cx,
             mac: os(cx) == Os::MacOs,
             functions: Vec::new(),
+            depth: 0,
+            budget: dom::MAX_ARRAY_ITEMS,
         };
         let items = decoder.items(menu_val);
         free(cx, menu_val);
